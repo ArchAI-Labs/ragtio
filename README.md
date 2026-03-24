@@ -1,6 +1,12 @@
-# RAG Unicz
+# RAGtio
 
 Sistema RAG (Retrieval-Augmented Generation) basato su Haystack, Qdrant e Ollama.
+
+<br>
+
+![ragtio_logo](https://github.com/ArchAI-Labs/ragtio/blob/main/ragtio_logo.png?raw=true)
+
+<br>
 
 ## Prerequisiti
 
