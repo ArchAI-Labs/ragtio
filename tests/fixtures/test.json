@@ -1,0 +1,5 @@
+[
+  {"testo": "Primo articolo JSON", "titolo": "Art. 1", "autore": "A. Rossi"},
+  {"testo": "Secondo articolo JSON", "titolo": "Art. 2", "autore": "B. Bianchi"},
+  {"testo": "", "titolo": "Vuoto", "autore": "C. Verdi"}
+]

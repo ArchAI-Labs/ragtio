@@ -1,0 +1,3 @@
+Questo è un file di testo di test.
+Contiene più righe.
+Usato per verificare l'ingestione TXT.

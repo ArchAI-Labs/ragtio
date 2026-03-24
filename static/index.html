@@ -1,0 +1,1319 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RAG Unicz</title>
+  <style>
+    /* ── Reset & variabili ─────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --clr-bg:       #f5f5f7;
+      --clr-surface:  #ffffff;
+      --clr-border:   #d1d5db;
+      --clr-primary:  #2563eb;
+      --clr-primary-h:#1d4ed8;
+      --clr-text:     #111827;
+      --clr-muted:    #6b7280;
+      --clr-ok:       #16a34a;
+      --clr-err:      #dc2626;
+      --clr-warn:     #d97706;
+      --clr-success-bg:#f0fdf4;
+      --clr-success-bd:#86efac;
+      --clr-danger-bg: #fef2f2;
+      --clr-danger-bd: #fca5a5;
+      --radius:       8px;
+      --shadow:       0 1px 3px rgba(0,0,0,.12);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--clr-bg);
+      color: var(--clr-text);
+      min-height: 100vh;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    header {
+      background: var(--clr-surface);
+      border-bottom: 1px solid var(--clr-border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: var(--shadow);
+    }
+
+    .header-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--clr-primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-indicators {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--clr-muted);
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--clr-border);
+      flex-shrink: 0;
+    }
+    .status-dot.ok   { background: var(--clr-ok); }
+    .status-dot.err  { background: var(--clr-err); }
+    .status-dot.warn { background: var(--clr-warn); }
+
+    /* ── Tab nav ─────────────────────────────────────────────── */
+    .tab-nav {
+      background: var(--clr-surface);
+      border-bottom: 1px solid var(--clr-border);
+      display: flex;
+      padding: 0 24px;
+      overflow-x: auto;
+    }
+
+    .tab-btn {
+      padding: 12px 20px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--clr-muted);
+      border-bottom: 3px solid transparent;
+      white-space: nowrap;
+      transition: color .15s, border-color .15s;
+    }
+    .tab-btn:hover { color: var(--clr-text); }
+    .tab-btn.active {
+      color: var(--clr-primary);
+      border-bottom-color: var(--clr-primary);
+    }
+
+    /* ── Main content ────────────────────────────────────────── */
+    main { padding: 24px; max-width: 900px; margin: 0 auto; }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Shared components ───────────────────────────────────── */
+    h2 {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 20px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--clr-border);
+    }
+
+    h3 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--clr-muted);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin: 20px 0 10px;
+    }
+
+    .card {
+      background: var(--clr-surface);
+      border: 1px solid var(--clr-border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: var(--shadow);
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 4px;
+      color: var(--clr-text);
+    }
+
+    input[type="text"],
+    input[type="number"],
+    select,
+    textarea {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--clr-border);
+      border-radius: 6px;
+      font-size: 14px;
+      font-family: inherit;
+      color: var(--clr-text);
+      background: var(--clr-surface);
+      transition: border-color .15s;
+    }
+    input[type="text"]:focus,
+    input[type="number"]:focus,
+    select:focus,
+    textarea:focus {
+      outline: none;
+      border-color: var(--clr-primary);
+      box-shadow: 0 0 0 3px rgba(37,99,235,.15);
+    }
+
+    textarea { resize: vertical; }
+
+    .form-row {
+      margin-bottom: 12px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
+
+    .form-inline {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .form-inline label { margin: 0; white-space: nowrap; }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 9px 18px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: background .15s, opacity .15s;
+    }
+    .btn-primary {
+      background: var(--clr-primary);
+      color: #fff;
+    }
+    .btn-primary:hover:not(:disabled) { background: var(--clr-primary-h); }
+    .btn-secondary {
+      background: var(--clr-bg);
+      color: var(--clr-text);
+      border: 1px solid var(--clr-border);
+    }
+    .btn-secondary:hover:not(:disabled) { background: #e5e7eb; }
+    .btn-danger {
+      background: #fee2e2;
+      color: var(--clr-err);
+      border: 1px solid #fca5a5;
+    }
+    .btn-sm {
+      padding: 4px 10px;
+      font-size: 12px;
+    }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+
+    /* Radio + Checkbox groups */
+    .radio-group, .check-group {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .radio-group label, .check-group label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin: 0;
+      font-weight: 400;
+      cursor: pointer;
+    }
+
+    /* Alerts */
+    .alert {
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      margin-top: 12px;
+      display: none;
+    }
+    .alert.show { display: block; }
+    .alert-success { background: var(--clr-success-bg); border: 1px solid var(--clr-success-bd); color: #166534; }
+    .alert-error   { background: var(--clr-danger-bg);  border: 1px solid var(--clr-danger-bd);  color: #991b1b; }
+    .alert-info    { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
+
+    /* Progress bar */
+    .progress-wrap {
+      background: #e5e7eb;
+      border-radius: 4px;
+      height: 6px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .progress-bar {
+      height: 100%;
+      background: var(--clr-primary);
+      width: 0%;
+      transition: width .3s;
+      border-radius: 4px;
+    }
+    .progress-bar.indeterminate {
+      width: 40%;
+      animation: indeterminate 1.2s infinite ease-in-out;
+    }
+    @keyframes indeterminate {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(350%); }
+    }
+
+    /* ── Tab 1: Ingestione ──────────────────────────────────── */
+    #drop-zone {
+      border: 2px dashed var(--clr-border);
+      border-radius: var(--radius);
+      padding: 36px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+      background: var(--clr-bg);
+    }
+    #drop-zone:hover, #drop-zone.dragover {
+      border-color: var(--clr-primary);
+      background: #eff6ff;
+    }
+    #drop-zone p { color: var(--clr-muted); margin-top: 6px; font-size: 13px; }
+    #drop-zone input[type="file"] { display: none; }
+
+    #file-info {
+      font-size: 13px;
+      color: var(--clr-muted);
+      margin-top: 8px;
+      display: none;
+    }
+
+    #tabular-opts { display: none; }
+
+    /* Chunking params */
+    .chunk-params { display: none; }
+    .chunk-params.active { display: grid; }
+
+    /* Metadata extras */
+    .meta-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: #e0e7ff;
+      color: #3730a3;
+      border-radius: 4px;
+      padding: 3px 8px;
+      font-size: 12px;
+      margin: 3px 2px;
+    }
+    .meta-tag button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: inherit;
+      font-size: 14px;
+      line-height: 1;
+      padding: 0;
+    }
+    #meta-tags { min-height: 28px; margin-top: 6px; }
+
+    /* ── Tab 2: Query ───────────────────────────────────────── */
+    #answer-box {
+      background: var(--clr-bg);
+      border: 1px solid var(--clr-border);
+      border-radius: var(--radius);
+      padding: 14px;
+      min-height: 120px;
+      font-size: 14px;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .cursor-blink::after {
+      content: '▌';
+      animation: blink 1s step-start infinite;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    .source-card {
+      border: 1px solid var(--clr-border);
+      border-radius: var(--radius);
+      padding: 12px;
+      margin-bottom: 8px;
+      background: var(--clr-surface);
+    }
+    .source-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 6px;
+    }
+    .source-title { font-weight: 600; font-size: 13px; }
+    .source-score {
+      font-family: monospace;
+      font-size: 13px;
+      color: var(--clr-primary);
+      font-weight: 600;
+    }
+    .source-preview {
+      font-size: 13px;
+      color: var(--clr-muted);
+      line-height: 1.5;
+      margin-bottom: 6px;
+    }
+    .source-meta { font-size: 11px; color: var(--clr-muted); }
+
+    .filter-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: #fef3c7;
+      color: #92400e;
+      border-radius: 4px;
+      padding: 3px 8px;
+      font-size: 12px;
+      margin: 3px 2px;
+    }
+    .filter-tag button {
+      background: none; border: none; cursor: pointer;
+      color: inherit; font-size: 14px; line-height: 1; padding: 0;
+    }
+
+    #sub-queries-box { display: none; }
+    #sub-queries-list { margin: 6px 0 0 16px; font-size: 13px; color: var(--clr-muted); }
+    #sub-queries-list li { margin-bottom: 3px; }
+
+    /* ── Tab 3: Config ──────────────────────────────────────── */
+    .embed-warning {
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      color: #92400e;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      margin-top: 6px;
+      display: none;
+    }
+    .embed-warning.show { display: block; }
+
+    code { font-family: 'Courier New', monospace; font-size: 12px; color: #6b7280; }
+
+    /* ── Tab 4: Evaluation ──────────────────────────────────── */
+    .coming-soon {
+      text-align: center;
+      padding: 60px 24px;
+      color: var(--clr-muted);
+    }
+    .coming-soon .icon { font-size: 48px; margin-bottom: 16px; }
+    .coming-soon h3 { font-size: 20px; color: var(--clr-text); text-transform: none; letter-spacing: 0; margin-bottom: 8px; }
+
+    /* ── Spinner ─────────────────────────────────────────────── */
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: middle;
+    }
+    .spinner.dark {
+      border: 2px solid rgba(0,0,0,.1);
+      border-top-color: var(--clr-primary);
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<!-- ── HEADER ─────────────────────────────────────────────────── -->
+<header>
+  <div class="header-title">
+    <span>🔍</span> RAG Unicz
+  </div>
+  <div class="status-indicators" id="status-indicators">
+    <div class="status-item">
+      <span class="status-dot" id="dot-qdrant"></span>
+      <span id="lbl-qdrant">Qdrant…</span>
+    </div>
+    <div class="status-item">
+      <span class="status-dot" id="dot-ollama"></span>
+      <span id="lbl-ollama">Ollama…</span>
+    </div>
+    <div class="status-item" id="lbl-chunks" style="display:none">
+      <span id="chunks-count" style="font-size:12px;color:var(--clr-muted)"></span>
+    </div>
+  </div>
+</header>
+
+<!-- ── TAB NAV ────────────────────────────────────────────────── -->
+<nav class="tab-nav" role="tablist" aria-label="Navigazione principale">
+  <button class="tab-btn active" role="tab" aria-selected="true"  aria-controls="tab-ingest"  id="btn-ingest" onclick="switchTab('ingest')">Ingestione</button>
+  <button class="tab-btn"        role="tab" aria-selected="false" aria-controls="tab-query"   id="btn-query"  onclick="switchTab('query')">Query &amp; Risposta</button>
+  <button class="tab-btn"        role="tab" aria-selected="false" aria-controls="tab-config"  id="btn-config" onclick="switchTab('config')">Configurazione</button>
+  <button class="tab-btn"        role="tab" aria-selected="false" aria-controls="tab-eval"    id="btn-eval"   onclick="switchTab('eval')">Evaluation</button>
+</nav>
+
+<main>
+
+<!-- ════════════════════════════════════════════════════════════
+     TAB 1 – INGESTIONE
+════════════════════════════════════════════════════════════ -->
+<section class="tab-panel active" id="tab-ingest" role="tabpanel" aria-labelledby="btn-ingest">
+  <h2>Ingestione Documenti</h2>
+
+  <!-- Drop zone -->
+  <div class="card" style="padding:0">
+    <div id="drop-zone" role="button" tabindex="0" aria-label="Area drag-and-drop per upload file"
+         onclick="document.getElementById('file-input').click()"
+         ondragover="handleDragOver(event)"
+         ondragleave="handleDragLeave(event)"
+         ondrop="handleDrop(event)"
+         onkeydown="if(event.key==='Enter'||event.key===' ')document.getElementById('file-input').click()">
+      <div style="font-size:32px;margin-bottom:8px">📂</div>
+      <strong>Trascina qui il file oppure</strong>
+      <p>
+        <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px"
+                onclick="event.stopPropagation();document.getElementById('file-input').click()">
+          Sfoglia…
+        </button>
+      </p>
+      <p style="margin-top:10px">Formati supportati: CSV &nbsp; JSON &nbsp; JSONL &nbsp; PDF &nbsp; TXT &nbsp; DOCX</p>
+      <input type="file" id="file-input" accept=".csv,.json,.jsonl,.pdf,.txt,.docx"
+             onchange="handleFileSelect(this.files[0])">
+    </div>
+    <div id="file-info" style="padding:10px 16px;border-top:1px solid var(--clr-border)">
+      📄 <strong id="file-name"></strong> &nbsp;–&nbsp; <span id="file-size"></span>
+    </div>
+  </div>
+
+  <!-- Opzioni CSV/JSON -->
+  <div id="tabular-opts" class="card">
+    <h3>Opzioni file tabellare</h3>
+    <div class="form-grid">
+      <div class="form-row">
+        <label for="content-col">Colonna testo</label>
+        <input type="text" id="content-col" placeholder="es. testo, content…">
+      </div>
+      <div class="form-row">
+        <label for="meta-cols">Colonne metadati <small style="font-weight:400">(separate da virgola)</small></label>
+        <input type="text" id="meta-cols" placeholder="es. titolo, autore, data">
+      </div>
+    </div>
+  </div>
+
+  <!-- Metadati aggiuntivi -->
+  <div class="card">
+    <h3>Metadati aggiuntivi</h3>
+    <div class="form-inline">
+      <input type="text" id="meta-key"   placeholder="Campo"  style="width:140px">
+      <input type="text" id="meta-val"   placeholder="Valore" style="width:180px">
+      <button type="button" class="btn btn-secondary btn-sm" onclick="addMetaTag()">+ Aggiungi</button>
+    </div>
+    <div id="meta-tags"></div>
+  </div>
+
+  <!-- Chunking -->
+  <div class="card">
+    <h3>Strategia di chunking</h3>
+    <div class="form-row">
+      <label for="chunk-strategy">Strategia</label>
+      <select id="chunk-strategy" onchange="updateChunkParams()">
+        <option value="character">Character</option>
+        <option value="sentence">Sentence</option>
+        <option value="paragraph">Paragraph</option>
+      </select>
+    </div>
+
+    <!-- Character params -->
+    <div id="params-character" class="chunk-params active form-grid">
+      <div class="form-row">
+        <label for="chunk-size">Dimensione chunk (caratteri)</label>
+        <input type="number" id="chunk-size" value="1000" min="50">
+      </div>
+      <div class="form-row">
+        <label for="chunk-overlap">Overlap (caratteri)</label>
+        <input type="number" id="chunk-overlap" value="100" min="0">
+      </div>
+    </div>
+
+    <!-- Sentence params -->
+    <div id="params-sentence" class="chunk-params form-grid">
+      <div class="form-row">
+        <label for="sent-per-chunk">Frasi per chunk</label>
+        <input type="number" id="sent-per-chunk" value="5" min="1">
+      </div>
+      <div class="form-row">
+        <label for="sent-overlap">Overlap (frasi)</label>
+        <input type="number" id="sent-overlap" value="1" min="0">
+      </div>
+    </div>
+
+    <!-- Paragraph params -->
+    <div id="params-paragraph" class="chunk-params form-grid">
+      <div class="form-row">
+        <label for="para-per-chunk">Paragrafi per chunk</label>
+        <input type="number" id="para-per-chunk" value="1" min="1">
+      </div>
+      <div class="form-row">
+        <label for="para-overlap">Overlap (paragrafi)</label>
+        <input type="number" id="para-overlap" value="0" min="0">
+      </div>
+    </div>
+  </div>
+
+  <!-- Policy duplicati -->
+  <div class="card">
+    <h3>Policy duplicati</h3>
+    <div class="radio-group">
+      <label><input type="radio" name="dup-policy" value="overwrite" checked> OVERWRITE</label>
+      <label><input type="radio" name="dup-policy" value="skip"> SKIP</label>
+    </div>
+  </div>
+
+  <!-- Azioni -->
+  <div class="btn-row">
+    <button type="button" class="btn btn-primary" id="btn-index" disabled onclick="indexDocuments()">
+      Indicizza Documenti
+    </button>
+  </div>
+
+  <!-- Stato indicizzazione -->
+  <div id="index-progress" style="display:none;margin-top:16px">
+    <span class="spinner dark"></span>
+    <span style="margin-left:8px;color:var(--clr-muted)">Indicizzazione in corso…</span>
+    <div class="progress-wrap" style="margin-top:8px"><div class="progress-bar indeterminate"></div></div>
+  </div>
+
+  <div id="index-result" class="alert" role="alert"></div>
+</section>
+
+
+<!-- ════════════════════════════════════════════════════════════
+     TAB 2 – QUERY & RISPOSTA
+════════════════════════════════════════════════════════════ -->
+<section class="tab-panel" id="tab-query" role="tabpanel" aria-labelledby="btn-query">
+  <h2>Query &amp; Risposta</h2>
+
+  <div class="card">
+    <div class="form-row">
+      <label for="query-text">Domanda</label>
+      <textarea id="query-text" rows="4" placeholder="Inserisci la domanda…"></textarea>
+    </div>
+  </div>
+
+  <!-- Opzioni retrieval -->
+  <div class="card">
+    <h3>Opzioni Retrieval</h3>
+    <div class="form-row">
+      <label>Modalità</label>
+      <div class="radio-group">
+        <label><input type="radio" name="retrieval-mode" value="dense"> Dense</label>
+        <label><input type="radio" name="retrieval-mode" value="sparse"> Sparse</label>
+        <label><input type="radio" name="retrieval-mode" value="hybrid" checked> Hybrid</label>
+      </div>
+    </div>
+    <div class="form-grid" style="margin-top:12px">
+      <div class="form-row">
+        <label for="top-k">Top-K</label>
+        <input type="number" id="top-k" value="10" min="1" max="50">
+      </div>
+      <div class="form-row">
+        <label for="top-n">Top-N (dopo rerank)</label>
+        <input type="number" id="top-n" value="5" min="1" max="50">
+      </div>
+    </div>
+  </div>
+
+  <!-- Filtri metadata -->
+  <div class="card">
+    <h3>Filtri Metadata</h3>
+    <div class="form-inline" style="gap:6px">
+      <input type="text"   id="filter-field" placeholder="Campo"   style="width:120px">
+      <select id="filter-op" style="width:80px">
+        <option value="=">=</option>
+        <option value=">=">&gt;=</option>
+        <option value="<=">&lt;=</option>
+        <option value="in">in</option>
+        <option value="not">not</option>
+      </select>
+      <input type="text"   id="filter-val"   placeholder="Valore"  style="width:150px">
+      <button type="button" class="btn btn-secondary btn-sm" onclick="addFilter()">+</button>
+    </div>
+    <div id="filter-tags" style="margin-top:8px"></div>
+  </div>
+
+  <!-- Query enhancement -->
+  <div class="card">
+    <h3>Query Enhancement</h3>
+    <div class="form-grid">
+      <div class="form-inline">
+        <label><input type="checkbox" id="use-expansion" checked> Query Expansion</label>
+        <input type="number" id="expansion-n" value="3" min="1" max="10" style="width:60px" aria-label="Varianti espansione">
+        <span style="font-size:12px;color:var(--clr-muted)">varianti</span>
+      </div>
+      <div class="form-inline">
+        <label><input type="checkbox" id="use-decomp" checked> Query Decomposition</label>
+        <input type="number" id="decomp-n" value="3" min="1" max="10" style="width:60px" aria-label="Sotto-query decomposizione">
+        <span style="font-size:12px;color:var(--clr-muted)">sotto-query</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Azioni -->
+  <div class="btn-row">
+    <button type="button" class="btn btn-primary" id="btn-query-send" onclick="sendQuery()">
+      Invia Domanda
+    </button>
+    <label class="form-inline" style="gap:6px">
+      <input type="checkbox" id="use-stream" checked> Streaming SSE
+    </label>
+  </div>
+
+  <!-- Risposta -->
+  <div class="card" style="margin-top:20px">
+    <h3>Risposta</h3>
+    <div id="answer-box" aria-live="polite" aria-label="Risposta del modello"></div>
+  </div>
+
+  <!-- Sotto-query -->
+  <div id="sub-queries-box" class="card">
+    <h3>Sotto-query usate</h3>
+    <ul id="sub-queries-list"></ul>
+  </div>
+
+  <!-- Fonti -->
+  <div id="sources-section" style="display:none">
+    <h3 id="sources-title" style="margin:16px 0 8px">Fonti Recuperate</h3>
+    <div id="sources-list"></div>
+  </div>
+</section>
+
+
+<!-- ════════════════════════════════════════════════════════════
+     TAB 3 – CONFIGURAZIONE
+════════════════════════════════════════════════════════════ -->
+<section class="tab-panel" id="tab-config" role="tabpanel" aria-labelledby="btn-config">
+  <h2>Configurazione</h2>
+
+  <!-- LLM -->
+  <div class="card">
+    <h3>Modello LLM</h3>
+    <div class="form-row">
+      <label for="cfg-model">Modello Ollama</label>
+      <select id="cfg-model"><option>Caricamento…</option></select>
+    </div>
+    <div class="form-grid">
+      <div class="form-row">
+        <label for="cfg-temp">Temperature</label>
+        <input type="number" id="cfg-temp" value="0.1" step="0.05" min="0" max="2">
+      </div>
+      <div class="form-row">
+        <label for="cfg-top-p">Top-P</label>
+        <input type="number" id="cfg-top-p" value="0.9" step="0.05" min="0" max="1">
+      </div>
+      <div class="form-row">
+        <label for="cfg-max-tokens">Max tokens</label>
+        <input type="number" id="cfg-max-tokens" value="1024" min="64">
+      </div>
+    </div>
+    <div class="form-row" style="margin-top:12px">
+      <label for="cfg-system-prompt">System Prompt</label>
+      <textarea id="cfg-system-prompt" rows="4">Sei un assistente esperto e preciso. Rispondi alle domande basandoti esclusivamente sul contesto fornito. Se l'informazione non è nel contesto, dillo esplicitamente.</textarea>
+    </div>
+    <div class="form-row">
+      <label for="cfg-rag-template">Prompt Template RAG</label>
+      <textarea id="cfg-rag-template" rows="5">Contesto:
+{context}
+
+Domanda: {question}
+Risposta:</textarea>
+      <p style="font-size:12px;color:var(--clr-muted);margin-top:4px">
+        Variabili disponibili: <code>{context}</code> <code>{question}</code>
+      </p>
+    </div>
+  </div>
+
+  <!-- Embedder -->
+  <div class="card">
+    <h3>Modello Embedder</h3>
+    <div class="form-row">
+      <label for="cfg-embed-model">Modello FastEmbed</label>
+      <select id="cfg-embed-model" onchange="checkEmbedChange()">
+        <option value="BAAI/bge-m3">BAAI/bge-m3</option>
+        <option value="BAAI/bge-small-en-v1.5">BAAI/bge-small-en-v1.5</option>
+        <option value="sentence-transformers/all-MiniLM-L6-v2">all-MiniLM-L6-v2</option>
+      </select>
+      <div class="embed-warning" id="embed-warning" role="alert">
+        ⚠ Cambiare il modello embedder richiede re-indicizzazione di tutti i documenti.
+      </div>
+    </div>
+    <div class="form-grid">
+      <div class="form-row">
+        <label for="cfg-batch-size">Batch size</label>
+        <input type="number" id="cfg-batch-size" value="32" min="1">
+      </div>
+      <div class="form-row">
+        <label for="cfg-max-len">Max length (token)</label>
+        <input type="number" id="cfg-max-len" value="512" min="64">
+      </div>
+    </div>
+  </div>
+
+  <!-- Prompt enhancement -->
+  <div class="card">
+    <h3>Prompt Query Enhancement</h3>
+    <div class="form-row">
+      <label for="cfg-expansion-prompt">Prompt Expansion</label>
+      <textarea id="cfg-expansion-prompt" rows="4">Genera {n} varianti semanticamente equivalenti della seguente query. Restituisci solo le varianti, una per riga.
+Query: {query}</textarea>
+      <p style="font-size:12px;color:var(--clr-muted);margin-top:4px">
+        Variabili disponibili: <code>{query}</code> <code>{n}</code>
+      </p>
+    </div>
+    <div class="form-row">
+      <label for="cfg-decomp-prompt">Prompt Decomposition</label>
+      <textarea id="cfg-decomp-prompt" rows="4">Scomponi la seguente domanda in {n} sotto-domande semplici. Restituisci solo le sotto-domande, una per riga.
+Domanda: {query}</textarea>
+      <p style="font-size:12px;color:var(--clr-muted);margin-top:4px">
+        Variabili disponibili: <code>{query}</code> <code>{n}</code>
+      </p>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <button type="button" class="btn btn-primary" id="btn-save-cfg" onclick="saveConfig()">
+      Salva Configurazione
+    </button>
+    <button type="button" class="btn btn-secondary" onclick="loadConfig()">
+      Ripristina
+    </button>
+  </div>
+  <div id="cfg-result" class="alert" role="alert"></div>
+</section>
+
+
+<!-- ════════════════════════════════════════════════════════════
+     TAB 4 – EVALUATION
+════════════════════════════════════════════════════════════ -->
+<section class="tab-panel" id="tab-eval" role="tabpanel" aria-labelledby="btn-eval">
+  <h2>Evaluation</h2>
+  <div class="coming-soon">
+    <div class="icon">🚧</div>
+    <h3>Coming soon</h3>
+    <p>La sezione evaluation sarà disponibile in una prossima versione.</p>
+  </div>
+</section>
+
+</main>
+
+<script>
+/* ════════════════════════════════════════════════════════════════
+   UTILITIES
+════════════════════════════════════════════════════════════════ */
+function showAlert(id, msg, type) {
+  const el = document.getElementById(id);
+  el.className = `alert alert-${type} show`;
+  el.textContent = msg;
+}
+function hideAlert(id) {
+  const el = document.getElementById(id);
+  el.className = 'alert';
+  el.textContent = '';
+}
+function fmtBytes(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+/* ════════════════════════════════════════════════════════════════
+   TAB SWITCHING
+════════════════════════════════════════════════════════════════ */
+function switchTab(name) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    b.classList.remove('active');
+    b.setAttribute('aria-selected', 'false');
+  });
+  document.getElementById('tab-' + name).classList.add('active');
+  const btn = document.getElementById('btn-' + name);
+  btn.classList.add('active');
+  btn.setAttribute('aria-selected', 'true');
+
+  if (name === 'config') loadConfig();
+}
+
+/* ════════════════════════════════════════════════════════════════
+   STATUS POLLING
+════════════════════════════════════════════════════════════════ */
+let availableModels = [];
+let originalEmbedModel = null;
+
+function dotState(dotEl, lblEl, label, ok) {
+  dotEl.className = 'status-dot ' + (ok === true ? 'ok' : ok === false ? 'err' : 'warn');
+  lblEl.textContent = label;
+}
+
+async function pollStatus() {
+  try {
+    const res = await fetch('/api/status');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+
+    const qdrant = data.qdrant_status === 'ok';
+    const ollama = data.ollama_status === 'ok';
+    dotState(
+      document.getElementById('dot-qdrant'),
+      document.getElementById('lbl-qdrant'),
+      'Qdrant ' + (qdrant ? 'OK' : 'Errore'),
+      qdrant
+    );
+    dotState(
+      document.getElementById('dot-ollama'),
+      document.getElementById('lbl-ollama'),
+      'Ollama ' + (ollama ? 'OK' : 'Errore'),
+      ollama
+    );
+
+    if (data.chunks_count != null) {
+      document.getElementById('lbl-chunks').style.display = '';
+      document.getElementById('chunks-count').textContent = data.chunks_count + ' chunk';
+    }
+
+    // Popola dropdown modelli Ollama
+    if (Array.isArray(data.models) && data.models.length) {
+      availableModels = data.models;
+      const sel = document.getElementById('cfg-model');
+      const prev = sel.value;
+      sel.innerHTML = availableModels.map(m =>
+        `<option value="${m}"${m === prev ? ' selected' : ''}>${m}</option>`
+      ).join('');
+    }
+  } catch {
+    dotState(document.getElementById('dot-qdrant'), document.getElementById('lbl-qdrant'), 'Qdrant N/D', false);
+    dotState(document.getElementById('dot-ollama'), document.getElementById('lbl-ollama'), 'Ollama N/D', false);
+  }
+}
+
+pollStatus();
+setInterval(pollStatus, 10000);
+
+/* ════════════════════════════════════════════════════════════════
+   TAB 1 – INGESTIONE
+════════════════════════════════════════════════════════════════ */
+let selectedFile = null;
+const TABULAR_EXTS = ['csv', 'json', 'jsonl'];
+
+function getExt(name) { return name.split('.').pop().toLowerCase(); }
+
+function handleFileSelect(file) {
+  if (!file) return;
+  selectedFile = file;
+  document.getElementById('file-name').textContent = file.name;
+  document.getElementById('file-size').textContent = fmtBytes(file.size);
+  document.getElementById('file-info').style.display = 'block';
+  document.getElementById('btn-index').disabled = false;
+
+  const ext = getExt(file.name);
+  document.getElementById('tabular-opts').style.display =
+    TABULAR_EXTS.includes(ext) ? 'block' : 'none';
+}
+
+function handleDragOver(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.add('dragover');
+}
+function handleDragLeave() {
+  document.getElementById('drop-zone').classList.remove('dragover');
+}
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFileSelect(file);
+}
+
+/* Chunking params visibility */
+function updateChunkParams() {
+  const strategy = document.getElementById('chunk-strategy').value;
+  ['character', 'sentence', 'paragraph'].forEach(s => {
+    const el = document.getElementById('params-' + s);
+    el.classList.toggle('active', s === strategy);
+  });
+}
+
+/* Metadati aggiuntivi */
+const metaTags = [];
+
+function addMetaTag() {
+  const k = document.getElementById('meta-key').value.trim();
+  const v = document.getElementById('meta-val').value.trim();
+  if (!k || !v) return;
+  metaTags.push({ k, v });
+  document.getElementById('meta-key').value = '';
+  document.getElementById('meta-val').value = '';
+  renderMetaTags();
+}
+
+function removeMetaTag(idx) {
+  metaTags.splice(idx, 1);
+  renderMetaTags();
+}
+
+function renderMetaTags() {
+  document.getElementById('meta-tags').innerHTML = metaTags.map((t, i) =>
+    `<span class="meta-tag">${t.k} = ${t.v}
+      <button type="button" onclick="removeMetaTag(${i})" aria-label="Rimuovi ${t.k}">&times;</button>
+    </span>`
+  ).join('');
+}
+
+async function indexDocuments() {
+  if (!selectedFile) return;
+  const btn = document.getElementById('btn-index');
+  const prog = document.getElementById('index-progress');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> In corso…';
+  prog.style.display = 'block';
+  hideAlert('index-result');
+
+  const strategy = document.getElementById('chunk-strategy').value;
+  const dupPolicy = document.querySelector('input[name="dup-policy"]:checked').value;
+
+  // Build extra_metadata
+  const extraMeta = {};
+  metaTags.forEach(t => { extraMeta[t.k] = t.v; });
+
+  // Build chunk_params
+  let chunkParams = {};
+  if (strategy === 'character') {
+    chunkParams = {
+      chunk_size: +document.getElementById('chunk-size').value,
+      chunk_overlap: +document.getElementById('chunk-overlap').value
+    };
+  } else if (strategy === 'sentence') {
+    chunkParams = {
+      sentences_per_chunk: +document.getElementById('sent-per-chunk').value,
+      sentence_overlap: +document.getElementById('sent-overlap').value
+    };
+  } else {
+    chunkParams = {
+      paragraphs_per_chunk: +document.getElementById('para-per-chunk').value,
+      paragraph_overlap: +document.getElementById('para-overlap').value
+    };
+  }
+
+  try {
+    const fd = new FormData();
+    fd.append('file', selectedFile);
+    fd.append('chunk_strategy', strategy);
+    fd.append('chunk_params', JSON.stringify(chunkParams));
+    fd.append('duplicate_policy', dupPolicy);
+    if (Object.keys(extraMeta).length) fd.append('extra_metadata', JSON.stringify(extraMeta));
+
+    const ext = getExt(selectedFile.name);
+    if (TABULAR_EXTS.includes(ext)) {
+      const cc = document.getElementById('content-col').value.trim();
+      const mc = document.getElementById('meta-cols').value.trim();
+      if (cc) fd.append('content_column', cc);
+      if (mc) fd.append('metadata_columns', mc);
+    }
+
+    const res = await fetch('/api/ingest', { method: 'POST', body: fd });
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.detail || 'Errore server');
+    const msg = `✓ Documenti originali: ${data.documents ?? '—'} │ Chunk prodotti: ${data.chunks ?? '—'} │ Tempo: ${data.elapsed ?? '—'}`;
+    showAlert('index-result', msg, 'success');
+  } catch (err) {
+    showAlert('index-result', '✗ ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Indicizza Documenti';
+    prog.style.display = 'none';
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════
+   TAB 2 – QUERY & RISPOSTA
+════════════════════════════════════════════════════════════════ */
+const queryFilters = [];
+
+function addFilter() {
+  const field = document.getElementById('filter-field').value.trim();
+  const op    = document.getElementById('filter-op').value;
+  const val   = document.getElementById('filter-val').value.trim();
+  if (!field || !val) return;
+  queryFilters.push({ field, op, val });
+  document.getElementById('filter-field').value = '';
+  document.getElementById('filter-val').value = '';
+  renderFilterTags();
+}
+
+function removeFilter(idx) {
+  queryFilters.splice(idx, 1);
+  renderFilterTags();
+}
+
+function renderFilterTags() {
+  document.getElementById('filter-tags').innerHTML = queryFilters.map((f, i) =>
+    `<span class="filter-tag">${f.field} ${f.op} ${f.val}
+      <button type="button" onclick="removeFilter(${i})" aria-label="Rimuovi filtro ${f.field}">&times;</button>
+    </span>`
+  ).join('');
+}
+
+function buildFilters() {
+  if (!queryFilters.length) return null;
+  const filters = {};
+  queryFilters.forEach(({ field, op, val }) => {
+    if (op === '=')       filters[field] = val;
+    else if (op === '>=') filters[field] = { $gte: val };
+    else if (op === '<=') filters[field] = { $lte: val };
+    else if (op === 'in') filters[field] = { $in: val.split(',').map(v => v.trim()) };
+    else if (op === 'not') filters[field] = { $ne: val };
+  });
+  return filters;
+}
+
+function renderSources(sources) {
+  if (!sources || !sources.length) return;
+  const section = document.getElementById('sources-section');
+  const list    = document.getElementById('sources-list');
+  document.getElementById('sources-title').textContent =
+    `Fonti Recuperate (${sources.length})`;
+  list.innerHTML = sources.map((s, i) => {
+    const src   = s.meta?.source || s.meta?.file_name || 'Fonte sconosciuta';
+    const page  = s.meta?.page ? ` — pagina ${s.meta.page}` : '';
+    const score = s.score != null ? s.score.toFixed(3) : '';
+    const preview = (s.content || '').slice(0, 200);
+    const metaStr = Object.entries(s.meta || {})
+      .filter(([k]) => !['source','file_name','page'].includes(k))
+      .map(([k,v]) => `${k}: ${v}`).join(' │ ');
+    return `
+      <div class="source-card">
+        <div class="source-header">
+          <span class="source-title">[${i+1}] ${src}${page}</span>
+          ${score ? `<span class="source-score">${score}</span>` : ''}
+        </div>
+        <div class="source-preview">"${preview}${(s.content||'').length > 200 ? '…' : ''}"</div>
+        ${metaStr ? `<div class="source-meta">${metaStr}</div>` : ''}
+      </div>`;
+  }).join('');
+  section.style.display = 'block';
+}
+
+function renderSubQueries(queries) {
+  if (!queries || !queries.length) return;
+  const box  = document.getElementById('sub-queries-box');
+  const list = document.getElementById('sub-queries-list');
+  list.innerHTML = queries.map(q => `<li>"${q}"</li>`).join('');
+  box.style.display = 'block';
+}
+
+async function sendQuery() {
+  const queryText = document.getElementById('query-text').value.trim();
+  if (!queryText) return;
+
+  const btn      = document.getElementById('btn-query-send');
+  const answerBox = document.getElementById('answer-box');
+  const useStream = document.getElementById('use-stream').checked;
+
+  // Reset
+  answerBox.textContent = '';
+  answerBox.className = '';
+  document.getElementById('sources-section').style.display = 'none';
+  document.getElementById('sources-list').innerHTML = '';
+  document.getElementById('sub-queries-box').style.display = 'none';
+  document.getElementById('sub-queries-list').innerHTML = '';
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> In attesa…';
+
+  const payload = {
+    query:      queryText,
+    mode:       document.querySelector('input[name="retrieval-mode"]:checked').value,
+    top_k:      +document.getElementById('top-k').value,
+    top_n:      +document.getElementById('top-n').value,
+    stream:     useStream,
+    use_expansion:   document.getElementById('use-expansion').checked,
+    expansion_n:     +document.getElementById('expansion-n').value,
+    use_decomposition: document.getElementById('use-decomp').checked,
+    decomposition_n:   +document.getElementById('decomp-n').value,
+    filters:    buildFilters()
+  };
+
+  try {
+    const res = await fetch('/api/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Errore server' }));
+      throw new Error(err.detail || 'Errore server');
+    }
+
+    if (!useStream) {
+      const data = await res.json();
+      answerBox.textContent = data.answer || '';
+      renderSources(data.sources);
+      renderSubQueries(data.sub_queries);
+    } else {
+      // SSE via fetch ReadableStream
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      answerBox.classList.add('cursor-blink');
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // ultima riga potenzialmente incompleta
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const raw = line.slice(6).trim();
+            if (!raw || raw === '[DONE]') continue;
+            try {
+              const json = JSON.parse(raw);
+              if (json.token) {
+                answerBox.textContent += json.token;
+              }
+              if (json.sources) {
+                renderSources(json.sources);
+              }
+              if (json.sub_queries) {
+                renderSubQueries(json.sub_queries);
+              }
+            } catch { /* linea non-JSON, skip */ }
+          }
+        }
+      }
+      answerBox.classList.remove('cursor-blink');
+    }
+  } catch (err) {
+    answerBox.textContent = '⚠ ' + err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Invia Domanda';
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════
+   TAB 3 – CONFIGURAZIONE
+════════════════════════════════════════════════════════════════ */
+let savedEmbedModel = null;
+
+function checkEmbedChange() {
+  const warn = document.getElementById('embed-warning');
+  const cur  = document.getElementById('cfg-embed-model').value;
+  warn.classList.toggle('show', savedEmbedModel != null && cur !== savedEmbedModel);
+}
+
+async function loadConfig() {
+  try {
+    const res  = await fetch('/api/config');
+    if (!res.ok) return;
+    const data = await res.json();
+
+    if (data.model)         {
+      // Prova a impostare il valore nel select; se non c'è l'opzione, aggiungila
+      const sel = document.getElementById('cfg-model');
+      if (![...sel.options].some(o => o.value === data.model)) {
+        sel.insertAdjacentHTML('beforeend', `<option value="${data.model}">${data.model}</option>`);
+      }
+      sel.value = data.model;
+    }
+    if (data.temperature  != null) document.getElementById('cfg-temp').value        = data.temperature;
+    if (data.top_p        != null) document.getElementById('cfg-top-p').value       = data.top_p;
+    if (data.max_tokens   != null) document.getElementById('cfg-max-tokens').value  = data.max_tokens;
+    if (data.system_prompt)        document.getElementById('cfg-system-prompt').value = data.system_prompt;
+    if (data.rag_template)         document.getElementById('cfg-rag-template').value  = data.rag_template;
+    if (data.embed_model) {
+      document.getElementById('cfg-embed-model').value = data.embed_model;
+      savedEmbedModel = data.embed_model;
+      originalEmbedModel = data.embed_model;
+    }
+    if (data.batch_size   != null) document.getElementById('cfg-batch-size').value  = data.batch_size;
+    if (data.max_length   != null) document.getElementById('cfg-max-len').value     = data.max_length;
+    if (data.expansion_prompt)     document.getElementById('cfg-expansion-prompt').value = data.expansion_prompt;
+    if (data.decomp_prompt)        document.getElementById('cfg-decomp-prompt').value    = data.decomp_prompt;
+  } catch { /* silently fail */ }
+}
+
+async function saveConfig() {
+  const btn = document.getElementById('btn-save-cfg');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Salvataggio…';
+  hideAlert('cfg-result');
+
+  const payload = {
+    model:              document.getElementById('cfg-model').value,
+    temperature:        +document.getElementById('cfg-temp').value,
+    top_p:              +document.getElementById('cfg-top-p').value,
+    max_tokens:         +document.getElementById('cfg-max-tokens').value,
+    system_prompt:      document.getElementById('cfg-system-prompt').value,
+    rag_template:       document.getElementById('cfg-rag-template').value,
+    embed_model:        document.getElementById('cfg-embed-model').value,
+    batch_size:         +document.getElementById('cfg-batch-size').value,
+    max_length:         +document.getElementById('cfg-max-len').value,
+    expansion_prompt:   document.getElementById('cfg-expansion-prompt').value,
+    decomp_prompt:      document.getElementById('cfg-decomp-prompt').value
+  };
+
+  try {
+    const res = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || 'Errore server');
+
+    savedEmbedModel = payload.embed_model;
+    document.getElementById('embed-warning').classList.remove('show');
+
+    const now = new Date().toLocaleTimeString('it-IT');
+    showAlert('cfg-result', `✓ Configurazione salvata (${now})`, 'success');
+  } catch (err) {
+    showAlert('cfg-result', '✗ ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Salva Configurazione';
+  }
+}
+</script>
+</body>
+</html>
