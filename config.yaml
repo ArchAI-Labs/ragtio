@@ -32,11 +32,11 @@ indexing:
   min_chunk_length: 50
 
 llm:
-  provider: "ollama"          # "ollama" oppure "openai"
-  host: "http://ollama:11434" # usato solo se provider=ollama
+  provider: "openai"          # "ollama" oppure "openai"
+  # host: "http://ollama:11434" # usato solo se provider=ollama
   # openai_api_key: ""        # oppure usa la variabile d'ambiente OPENAI_API_KEY
   # openai_base_url: null     # lascia null per le API ufficiali OpenAI
-  model: "qwen3:4b"           # es. "gpt-4o-mini" per OpenAI
+  model: "gpt-4.1-mini"           # es. "gpt-4o-mini" per OpenAI "qwen3:4b"
   temperature: 0.1
   top_p: 0.9
   max_tokens: 1024

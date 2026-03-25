@@ -231,14 +231,20 @@ def run_evaluation_mode_a(cfg: AppConfig) -> EvaluationReport:
         # 3. Retrieval
         retrieved_docs = retrieve(query=query, cfg=cfg)
         retrieved_ids = [str(d.id) for d in retrieved_docs if d.id]
+        retrieved_chunks = [
+            {"id": str(d.id), "content": d.content or ""}
+            for d in retrieved_docs if d.id
+        ]
         relevant_ids = [chunk_id]
 
         # 4. Calcolo metriche per campione
         sample_result: dict = {
             "chunk_id": chunk_id,
+            "chunk_text": chunk_text,
             "query_type": query_kind,
             "query": query,
             "retrieved_ids": retrieved_ids,
+            "retrieved_chunks": retrieved_chunks,
             "mrr": reciprocal_rank(retrieved_ids, relevant_ids),
         }
         for k in k_values:

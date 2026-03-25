@@ -501,6 +501,26 @@
       text-align: right;
       white-space: nowrap;
     }
+    .eval-table tr.sample-row { cursor: pointer; }
+    .eval-table tr.sample-row:hover td { background: rgba(99,102,241,.06); }
+    .eval-table tr.detail-row { display: none; }
+    .eval-table tr.detail-row.open { display: table-row; }
+    .eval-table td.detail-cell {
+      padding: 10px 14px;
+      background: var(--clr-bg);
+      max-width: none; overflow: visible; white-space: normal;
+    }
+    .detail-section { margin-bottom: 10px; }
+    .detail-label { font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .5px; color: var(--clr-muted); margin-bottom: 4px; }
+    .detail-text { font-size: 12px; line-height: 1.5; color: var(--clr-text);
+      background: rgba(0,0,0,.15); border-radius: 4px; padding: 6px 8px;
+      white-space: pre-wrap; word-break: break-word; }
+    .chunk-hit  { border-left: 3px solid var(--clr-ok); }
+    .chunk-miss { border-left: 3px solid var(--clr-border); }
+    .chunk-item { margin-bottom: 6px; }
+    .chunk-rank { font-size: 11px; color: var(--clr-muted); margin-bottom: 2px; }
+    .toggle-icon { font-size: 10px; color: var(--clr-muted); margin-right: 4px; }
 
     /* ── Spinner ─────────────────────────────────────────────── */
     .spinner {
@@ -965,7 +985,15 @@ Question: {query}</textarea>
 
     <!-- Per-sample table -->
     <div class="card">
-      <h3>Per-sample details</h3>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <h3 style="margin:0">Per-sample details</h3>
+        <button type="button" class="btn btn-secondary" id="btn-download-csv" onclick="downloadEvalCsv()" style="font-size:12px;padding:5px 12px">
+          Download CSV
+        </button>
+      </div>
+      <p style="font-size:12px;color:var(--clr-muted);margin:0 0 10px">
+        Click on a row to expand the expected chunk and retrieved chunks.
+      </p>
       <div class="eval-table-wrap">
         <table class="eval-table" id="eval-sample-table">
           <thead id="eval-sample-head"></thead>
@@ -1540,7 +1568,14 @@ async function _pollEvalJob() {
   } catch { /* retry al prossimo tick */ }
 }
 
+let _lastEvalReport = null;
+
+function _esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 function _renderEvalReport(report) {
+  _lastEvalReport = report;
   const ir = report.ir_metrics;
   const kv = report.k_values || [];
   const elapsed = report.elapsed_time_seconds != null
@@ -1555,11 +1590,9 @@ function _renderEvalReport(report) {
     `<span>Duration: <b>${elapsed}</b></span>`;
 
   // MRR
-  document.getElementById('eval-mrr-grid').innerHTML =
-    _metricCard('MRR', ir.mrr);
+  document.getElementById('eval-mrr-grid').innerHTML = _metricCard('MRR', ir.mrr);
 
   // Recall@K, HitRate@K, NDCG@K
-  // ir.recall_at_k / hit_rate_at_k / ndcg_at_k sono oggetti {k: valore}
   let recallHtml = '', hitrateHtml = '', ndcgHtml = '';
   kv.forEach(k => {
     recallHtml  += _metricCard(`Recall@${k}`,   (ir.recall_at_k   || {})[k] ?? 0);
@@ -1573,27 +1606,107 @@ function _renderEvalReport(report) {
   // Per-sample table
   const samples = report.per_sample_results || [];
   if (samples.length) {
-    // Build headers from first sample keys
-    const skip = new Set(['chunk_id', 'question', 'retrieved_ids']);
-    const metricKeys = Object.keys(samples[0]).filter(k => !skip.has(k));
+    const skipDisplay = new Set(['chunk_id', 'chunk_text', 'retrieved_ids', 'retrieved_chunks', 'query']);
+    const metricKeys = Object.keys(samples[0]).filter(k => !skipDisplay.has(k));
+
     document.getElementById('eval-sample-head').innerHTML =
-      '<tr><th>#</th><th>Question</th>' +
-      metricKeys.map(k => `<th>${k}</th>`).join('') +
+      '<tr><th></th><th>#</th><th>Query</th>' +
+      metricKeys.map(k => `<th>${_esc(k)}</th>`).join('') +
       '</tr>';
+
+    const colCount = metricKeys.length + 3;
     document.getElementById('eval-sample-body').innerHTML = samples.map((s, i) => {
-      const q = (s.question || '').slice(0, 80) + ((s.question || '').length > 80 ? '…' : '');
-      return '<tr><td class="num">' + (i + 1) + '</td>' +
-        `<td title="${(s.question||'').replace(/"/g,'&quot;')}">${q}</td>` +
-        metricKeys.map(k => {
-          const v = s[k];
-          const fmt = typeof v === 'number' ? v.toFixed(3) : (v ?? '—');
-          return `<td class="num">${fmt}</td>`;
-        }).join('') +
-        '</tr>';
+      const q = (s.query || '');
+      const qShort = q.length > 90 ? q.slice(0, 90) + '…' : q;
+
+      // Metric cells
+      const metricCells = metricKeys.map(k => {
+        const v = s[k];
+        const fmt = typeof v === 'number' ? `<span class="${_scoreClass(v)}">${v.toFixed(3)}</span>` : _esc(v ?? '—');
+        return `<td class="num">${fmt}</td>`;
+      }).join('');
+
+      // Detail row: expected chunk + retrieved chunks
+      const expectedText = s.chunk_text || '(no content)';
+      const retrievedChunks = s.retrieved_chunks || [];
+      const expectedId = s.chunk_id || '';
+      const retrievedHtml = retrievedChunks.map((rc, ri) => {
+        const isHit = rc.id === expectedId;
+        const cls = isHit ? 'chunk-hit' : 'chunk-miss';
+        const badge = isHit ? ' <b style="color:var(--clr-ok)">&#10003; HIT</b>' : '';
+        return `<div class="chunk-item detail-text ${cls}">
+          <div class="chunk-rank">Rank ${ri + 1} — ID: ${_esc(rc.id)}${badge}</div>
+          <div>${_esc(rc.content || '(no content)')}</div>
+        </div>`;
+      }).join('');
+
+      const detailHtml = `<td class="detail-cell" colspan="${colCount}">
+        <div class="detail-section">
+          <div class="detail-label">Query</div>
+          <div class="detail-text">${_esc(q)}</div>
+        </div>
+        <div class="detail-section">
+          <div class="detail-label">Expected chunk (ID: ${_esc(expectedId)})</div>
+          <div class="detail-text">${_esc(expectedText)}</div>
+        </div>
+        <div class="detail-section">
+          <div class="detail-label">Retrieved chunks (${retrievedChunks.length})</div>
+          ${retrievedHtml || '<div class="detail-text">(none)</div>'}
+        </div>
+      </td>`;
+
+      return `<tr class="sample-row" onclick="_toggleDetail(${i})">
+          <td style="width:20px;text-align:center"><span class="toggle-icon" id="toggle-icon-${i}">&#9654;</span></td>
+          <td class="num">${i + 1}</td>
+          <td title="${_esc(q)}" style="max-width:300px">${_esc(qShort)}</td>
+          ${metricCells}
+        </tr>
+        <tr class="detail-row" id="detail-row-${i}">
+          ${detailHtml}
+        </tr>`;
     }).join('');
   }
 
   document.getElementById('eval-results').style.display = 'block';
+}
+
+function _toggleDetail(i) {
+  const row = document.getElementById('detail-row-' + i);
+  const icon = document.getElementById('toggle-icon-' + i);
+  const isOpen = row.classList.toggle('open');
+  icon.innerHTML = isOpen ? '&#9660;' : '&#9654;';
+}
+
+function downloadEvalCsv() {
+  if (!_lastEvalReport) return;
+  const samples = _lastEvalReport.per_sample_results || [];
+  if (!samples.length) return;
+
+  const skipCsv = new Set(['retrieved_ids', 'retrieved_chunks', 'chunk_text']);
+  const allKeys = Object.keys(samples[0]).filter(k => !skipCsv.has(k));
+  const headers = ['#', ...allKeys, 'expected_chunk', 'retrieved_chunks_ids'];
+
+  const csvEscape = v => {
+    const s = String(v ?? '');
+    return s.includes(',') || s.includes('"') || s.includes('\n')
+      ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+
+  const rows = samples.map((s, i) => {
+    const base = allKeys.map(k => csvEscape(s[k]));
+    const expectedChunk = csvEscape(s.chunk_text || '');
+    const retrievedIds = csvEscape((s.retrieved_chunks || []).map(rc => rc.id).join(' | '));
+    return [i + 1, ...base, expectedChunk, retrievedIds].join(',');
+  });
+
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'eval_results.csv';
+  a.click();
+  URL.revokeObjectURL(url);
 }
 </script>
 </body>

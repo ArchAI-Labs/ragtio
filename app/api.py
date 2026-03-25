@@ -22,7 +22,7 @@ from app.config import AppConfig, load_config
 from app.indexing import _get_embedding_dim, build_index
 from app.ingest import UnsupportedFormatError, ingest
 from app.query_enhancement import enhance_query
-from app.rag_qa import build_context
+from app.rag_qa import build_context, _call_llm, _stream_llm
 from app.retrieval import retrieve
 
 logger = logging.getLogger(__name__)
@@ -234,19 +234,9 @@ async def _rag_stream_generator(
         return
 
     context, n_included = build_context(all_docs, max_context_length=cfg.llm.max_context_length)
-    payload = _build_ollama_payload(context, query, cfg, stream=True)
 
-    async with httpx.AsyncClient(timeout=cfg.llm.timeout) as client:
-        async with client.stream("POST", f"{cfg.llm.host}/api/chat", json=payload) as resp:
-            resp.raise_for_status()
-            async for line in resp.aiter_lines():
-                if not line:
-                    continue
-                data = json.loads(line)
-                if token := data.get("message", {}).get("content"):
-                    yield f"event: token\ndata: {json.dumps({'token': token})}\n\n"
-                if data.get("done"):
-                    break
+    async for token in _stream_llm(context, query, cfg):
+        yield f"event: token\ndata: {json.dumps({'token': token})}\n\n"
 
     sub_queries = enhanced.sub_queries + enhanced.expanded_queries
     sources_json = [s.model_dump() for s in _docs_to_response(all_docs[:n_included])]
@@ -392,17 +382,7 @@ async def api_query(request: Request, body: QueryRequest):
         )
 
     context, n_included = build_context(all_docs, max_context_length=cfg.llm.max_context_length)
-    payload = _build_ollama_payload(context, body.query, cfg, stream=False)
-
-    try:
-        async with httpx.AsyncClient(timeout=cfg.llm.timeout) as client:
-            resp = await client.post(f"{cfg.llm.host}/api/chat", json=payload)
-            resp.raise_for_status()
-            answer = resp.json()["message"]["content"]
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=503, detail="Ollama non raggiungibile (timeout)")
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=503, detail=f"Ollama non raggiungibile: {e}")
+    answer = await _call_llm(context, body.query, cfg)
 
     return QueryResponse(
         answer=answer,
@@ -441,19 +421,24 @@ async def api_status(request: Request):
     except (httpx.HTTPError, httpx.ConnectError, httpx.TimeoutException) as e:
         qdrant_status = ServiceStatus(connected=False, detail=str(e))
 
-    # ── Ollama health ──
-    ollama_status = ServiceStatus(connected=False)
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            t0 = time.monotonic()
-            resp = await client.get(f"{cfg.llm.host}/api/tags")
-            latency_ms = round((time.monotonic() - t0) * 1000, 2)
-        ollama_status = ServiceStatus(connected=resp.status_code == 200, latency_ms=latency_ms)
-    except (httpx.HTTPError, httpx.ConnectError, httpx.TimeoutException) as e:
-        ollama_status = ServiceStatus(connected=False, detail=str(e))
+    # ── LLM health ──
+    if cfg.llm.provider == "ollama":
+        ollama_status = ServiceStatus(connected=False)
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                t0 = time.monotonic()
+                resp = await client.get(f"{cfg.llm.host}/api/tags")
+                latency_ms = round((time.monotonic() - t0) * 1000, 2)
+            ollama_status = ServiceStatus(connected=resp.status_code == 200, latency_ms=latency_ms)
+        except (httpx.HTTPError, httpx.ConnectError, httpx.TimeoutException) as e:
+            ollama_status = ServiceStatus(connected=False, detail=str(e))
+        llm_ok = ollama_status.connected
+    else:
+        ollama_status = ServiceStatus(connected=True, detail=f"n/a (provider={cfg.llm.provider})")
+        llm_ok = True
 
-    both_ok = qdrant_status.connected and ollama_status.connected
-    either_ok = qdrant_status.connected or ollama_status.connected
+    both_ok = qdrant_status.connected and llm_ok
+    either_ok = qdrant_status.connected or llm_ok
     overall: Literal["ok", "degraded", "down"] = (
         "ok" if both_ok else ("degraded" if either_ok else "down")
     )

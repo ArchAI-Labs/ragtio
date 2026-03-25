@@ -74,6 +74,8 @@ services:
       - ./config.yaml:/app/config.yaml:ro
       - app_models:/app/models
       - app_eval_reports:/app/eval_reports
+    env_file:
+      - .env
     environment:
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
