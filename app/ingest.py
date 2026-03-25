@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class UnsupportedFormatError(Exception):
     """Sollevata quando il formato del file non è supportato dal modulo di ingestione."""
 
-    SUPPORTED = [".csv", ".json", ".jsonl", ".pdf", ".txt", ".docx"]
+    SUPPORTED = [".csv", ".json", ".jsonl", ".md", ".pdf", ".txt", ".docx"]
 
     def __init__(self, extension: str):
         super().__init__(
@@ -69,7 +69,7 @@ def ingest(
         documents = _ingest_json(file_path, content_column, metadata_columns, extra_metadata)
     elif ext == ".pdf":
         documents = _ingest_pdf(file_path, extra_metadata)
-    elif ext == ".txt":
+    elif ext in (".txt", ".md"):
         documents = _ingest_txt(file_path, extra_metadata)
     elif ext == ".docx":
         documents = _ingest_docx(file_path, extra_metadata)

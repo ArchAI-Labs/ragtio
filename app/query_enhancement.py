@@ -1,4 +1,4 @@
-"""Query enhancement: expansion e decomposition tramite Ollama."""
+"""Query enhancement: expansion e decomposition tramite Ollama o OpenAI."""
 
 import logging
 import re
@@ -53,13 +53,6 @@ def _parse_llm_list_response(response: str, expected_n: int) -> List[str]:
 
 
 def _call_ollama(prompt: str, llm_cfg: LLMConfig) -> str:
-    """
-    Chiama Ollama /api/generate in modalità non-stream e restituisce la risposta.
-
-    Raises:
-        httpx.TimeoutException: se Ollama non risponde entro llm_cfg.timeout secondi.
-        httpx.HTTPError: per altri errori di connessione.
-    """
     url = f"{llm_cfg.host}/api/generate"
     payload = {
         "model": llm_cfg.model,
@@ -77,6 +70,30 @@ def _call_ollama(prompt: str, llm_cfg: LLMConfig) -> str:
         return response.json()["response"]
 
 
+def _call_openai(prompt: str, llm_cfg: LLMConfig) -> str:
+    from openai import OpenAI
+
+    client = OpenAI(
+        api_key=llm_cfg.openai_api_key,
+        base_url=llm_cfg.openai_base_url,
+        timeout=llm_cfg.timeout,
+    )
+    response = client.chat.completions.create(
+        model=llm_cfg.model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=llm_cfg.temperature,
+        top_p=llm_cfg.top_p,
+        max_tokens=llm_cfg.max_tokens,
+    )
+    return response.choices[0].message.content
+
+
+def _call_llm(prompt: str, llm_cfg: LLMConfig) -> str:
+    if llm_cfg.provider == "openai":
+        return _call_openai(prompt, llm_cfg)
+    return _call_ollama(prompt, llm_cfg)
+
+
 def _deduplicate_against_original(variants: List[str], original_query: str) -> List[str]:
     """Rimuove varianti identiche alla query originale (case-insensitive)."""
     original_lower = original_query.lower()
@@ -85,14 +102,14 @@ def _deduplicate_against_original(variants: List[str], original_query: str) -> L
 
 def _expand_query(query: str, exp_cfg: ExpansionConfig, llm_cfg: LLMConfig) -> List[str]:
     prompt = exp_cfg.prompt_template.format(query=query, n=exp_cfg.n_variants)
-    raw = _call_ollama(prompt, llm_cfg)
+    raw = _call_llm(prompt, llm_cfg)
     variants = _parse_llm_list_response(raw, exp_cfg.n_variants)
     return _deduplicate_against_original(variants, query)
 
 
 def _decompose_query(query: str, dec_cfg: DecompositionConfig, llm_cfg: LLMConfig) -> List[str]:
     prompt = dec_cfg.prompt_template.format(query=query, n=dec_cfg.n_subqueries)
-    raw = _call_ollama(prompt, llm_cfg)
+    raw = _call_llm(prompt, llm_cfg)
     sub_queries = _parse_llm_list_response(raw, dec_cfg.n_subqueries)
     return _deduplicate_against_original(sub_queries, query)
 
@@ -135,14 +152,21 @@ def enhance_query(query: str, cfg: AppConfig) -> EnhancedQuery:
 
     except httpx.TimeoutException:
         logger.warning(
-            "Ollama non ha risposto entro %s secondi durante query enhancement. "
+            "LLM non ha risposto entro %s secondi durante query enhancement. "
             "Fallback alla query originale.",
             cfg.llm.timeout,
         )
         return EnhancedQuery(original_query=query)
     except httpx.HTTPError as exc:
         logger.warning(
-            "Errore di connessione a Ollama durante query enhancement: %s. "
+            "Errore di connessione al LLM durante query enhancement: %s. "
+            "Fallback alla query originale.",
+            exc,
+        )
+        return EnhancedQuery(original_query=query)
+    except Exception as exc:  # es. openai.APIError, openai.AuthenticationError
+        logger.warning(
+            "Errore LLM durante query enhancement: %s. "
             "Fallback alla query originale.",
             exc,
         )

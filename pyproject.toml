@@ -3,15 +3,18 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "rag-unicz"
+name = "ragtio"
 version = "0.1.0"
-description = "RAG application for Unicz"
+description = "Application for RAG evaluation"
 requires-python = ">=3.11"
 dependencies = [
     "haystack-ai>=2.6",
+    "qdrant-haystack",
+    "fastembed-haystack",
     "qdrant-client",
     "fastembed",
     "ollama",
+    "openai>=1.0",
     "fastapi",
     "uvicorn[standard]",
     "pydantic>=2.7",
@@ -24,13 +27,17 @@ dependencies = [
     "python-multipart",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "pytest",
     "pytest-asyncio",
-    "httpx",
+    "anyio[trio]",
+    "pytest-httpx",
     "ruff",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
 
 [tool.ruff]
 line-length = 100

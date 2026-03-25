@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>RAG Unicz</title>
+  <title>RAGtio</title>
   <style>
     /* ── Reset & variabili ─────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -427,13 +427,80 @@
     code { font-family: 'Courier New', monospace; font-size: 12px; color: #6b7280; }
 
     /* ── Tab 4: Evaluation ──────────────────────────────────── */
-    .coming-soon {
-      text-align: center;
-      padding: 60px 24px;
-      color: var(--clr-muted);
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px;
+      margin-top: 12px;
     }
-    .coming-soon .icon { font-size: 48px; margin-bottom: 16px; }
-    .coming-soon h3 { font-size: 20px; color: var(--clr-text); text-transform: none; letter-spacing: 0; margin-bottom: 8px; }
+
+    .metric-card {
+      background: var(--clr-surface);
+      border: 1px solid var(--clr-border);
+      border-radius: var(--radius);
+      padding: 14px 12px;
+      text-align: center;
+      box-shadow: var(--shadow);
+    }
+    .metric-card .mc-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--clr-muted);
+      margin-bottom: 6px;
+    }
+    .metric-card .mc-value {
+      font-size: 26px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .mc-value.score-high  { color: var(--clr-ok); }
+    .mc-value.score-mid   { color: var(--clr-warn); }
+    .mc-value.score-low   { color: var(--clr-err); }
+
+    .eval-summary {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      font-size: 13px;
+      color: var(--clr-muted);
+      margin-top: 8px;
+    }
+    .eval-summary span b { color: var(--clr-text); }
+
+    .eval-table-wrap {
+      overflow-x: auto;
+      margin-top: 12px;
+    }
+    .eval-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .eval-table th {
+      background: var(--clr-bg);
+      padding: 6px 10px;
+      text-align: left;
+      font-weight: 600;
+      border-bottom: 2px solid var(--clr-border);
+      white-space: nowrap;
+    }
+    .eval-table td {
+      padding: 5px 10px;
+      border-bottom: 1px solid var(--clr-border);
+      vertical-align: top;
+      max-width: 260px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .eval-table tr:last-child td { border-bottom: none; }
+    .eval-table td.num {
+      font-family: monospace;
+      text-align: right;
+      white-space: nowrap;
+    }
 
     /* ── Spinner ─────────────────────────────────────────────── */
     .spinner {
@@ -457,7 +524,7 @@
 <!-- ── HEADER ─────────────────────────────────────────────────── -->
 <header>
   <div class="header-title">
-    <span>🔍</span> RAG Unicz
+    <span>🔍</span> RAGtio
   </div>
   <div class="status-indicators" id="status-indicators">
     <div class="status-item">
@@ -470,6 +537,19 @@
     </div>
     <div class="status-item" id="lbl-chunks" style="display:none">
       <span id="chunks-count" style="font-size:12px;color:var(--clr-muted)"></span>
+    </div>
+    <div class="status-item" style="gap:4px">
+      <span style="color:var(--clr-muted);font-size:12px;white-space:nowrap">Collection:</span>
+      <input type="text" id="collection-input"
+             style="width:120px;font-size:12px;padding:2px 6px;border:1px solid var(--clr-border);border-radius:4px;background:var(--clr-bg);color:var(--clr-text)"
+             placeholder="documents"
+             title="Nome della collection Qdrant attiva"
+             onkeydown="if(event.key==='Enter')applyCollection()">
+      <button type="button" onclick="applyCollection()"
+              style="font-size:11px;padding:2px 8px;border:1px solid var(--clr-border);border-radius:4px;background:var(--clr-surface);cursor:pointer;white-space:nowrap"
+              title="Cambia collection">
+        Applica
+      </button>
     </div>
   </div>
 </header>
@@ -506,8 +586,8 @@
           Sfoglia…
         </button>
       </p>
-      <p style="margin-top:10px">Formati supportati: CSV &nbsp; JSON &nbsp; JSONL &nbsp; PDF &nbsp; TXT &nbsp; DOCX</p>
-      <input type="file" id="file-input" accept=".csv,.json,.jsonl,.pdf,.txt,.docx"
+      <p style="margin-top:10px">Formati supportati: CSV &nbsp; JSON &nbsp; JSONL &nbsp; PDF &nbsp; TXT &nbsp; DOCX &nbsp; MD</p>
+      <input type="file" id="file-input" accept=".csv,.json,.jsonl,.pdf,.txt,.docx,.md"
              onchange="handleFileSelect(this.files[0])">
     </div>
     <div id="file-info" style="padding:10px 16px;border-top:1px solid var(--clr-border)">
@@ -826,10 +906,73 @@ Domanda: {query}</textarea>
 ════════════════════════════════════════════════════════════ -->
 <section class="tab-panel" id="tab-eval" role="tabpanel" aria-labelledby="btn-eval">
   <h2>Evaluation</h2>
-  <div class="coming-soon">
-    <div class="icon">🚧</div>
-    <h3>Coming soon</h3>
-    <p>La sezione evaluation sarà disponibile in una prossima versione.</p>
+
+  <!-- Mode A -->
+  <div class="card">
+    <h3>Mode A — IR Metrics (generazione sintetica)</h3>
+    <p style="font-size:13px;color:var(--clr-muted);margin-bottom:12px">
+      Campiona chunk casuali dalla collection, genera una domanda sintetica per ognuno tramite il LLM,
+      esegue il retrieval e misura la qualità del recupero con MRR, Recall@K, Hit Rate@K e NDCG@K.
+    </p>
+
+    <div class="btn-row" style="margin-top:0">
+      <button type="button" class="btn btn-primary" id="btn-eval-a" onclick="startEvalModeA()">
+        Avvia Evaluation Mode A
+      </button>
+    </div>
+
+    <div id="eval-progress" style="display:none;margin-top:12px">
+      <div class="progress-wrap"><div class="progress-bar indeterminate"></div></div>
+      <p style="font-size:12px;color:var(--clr-muted);margin-top:6px">
+        Evaluation in corso — può richiedere qualche minuto…
+      </p>
+    </div>
+    <div id="eval-alert" class="alert" role="alert"></div>
+  </div>
+
+  <!-- Results -->
+  <div id="eval-results" style="display:none">
+    <div class="card">
+      <h3>Risultati</h3>
+      <div class="eval-summary" id="eval-summary"></div>
+
+      <div id="eval-metrics-section">
+        <!-- MRR -->
+        <p style="font-size:12px;font-weight:600;color:var(--clr-muted);text-transform:uppercase;letter-spacing:.5px;margin:16px 0 4px">
+          Mean Reciprocal Rank
+        </p>
+        <div class="metric-grid" id="eval-mrr-grid"></div>
+
+        <!-- Recall@K -->
+        <p style="font-size:12px;font-weight:600;color:var(--clr-muted);text-transform:uppercase;letter-spacing:.5px;margin:16px 0 4px">
+          Recall@K
+        </p>
+        <div class="metric-grid" id="eval-recall-grid"></div>
+
+        <!-- Hit Rate@K -->
+        <p style="font-size:12px;font-weight:600;color:var(--clr-muted);text-transform:uppercase;letter-spacing:.5px;margin:16px 0 4px">
+          Hit Rate@K
+        </p>
+        <div class="metric-grid" id="eval-hitrate-grid"></div>
+
+        <!-- NDCG@K -->
+        <p style="font-size:12px;font-weight:600;color:var(--clr-muted);text-transform:uppercase;letter-spacing:.5px;margin:16px 0 4px">
+          NDCG@K
+        </p>
+        <div class="metric-grid" id="eval-ndcg-grid"></div>
+      </div>
+    </div>
+
+    <!-- Per-sample table -->
+    <div class="card">
+      <h3>Dettaglio per campione</h3>
+      <div class="eval-table-wrap">
+        <table class="eval-table" id="eval-sample-table">
+          <thead id="eval-sample-head"></thead>
+          <tbody id="eval-sample-body"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -889,8 +1032,8 @@ async function pollStatus() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
 
-    const qdrant = data.qdrant_status === 'ok';
-    const ollama = data.ollama_status === 'ok';
+    const qdrant = data.qdrant?.connected === true;
+    const ollama = data.ollama?.connected === true;
     dotState(
       document.getElementById('dot-qdrant'),
       document.getElementById('lbl-qdrant'),
@@ -904,23 +1047,37 @@ async function pollStatus() {
       ollama
     );
 
-    if (data.chunks_count != null) {
+    if (data.n_documents != null) {
       document.getElementById('lbl-chunks').style.display = '';
-      document.getElementById('chunks-count').textContent = data.chunks_count + ' chunk';
+      document.getElementById('chunks-count').textContent = data.n_documents + ' chunk';
     }
 
-    // Popola dropdown modelli Ollama
-    if (Array.isArray(data.models) && data.models.length) {
-      availableModels = data.models;
-      const sel = document.getElementById('cfg-model');
-      const prev = sel.value;
-      sel.innerHTML = availableModels.map(m =>
-        `<option value="${m}"${m === prev ? ' selected' : ''}>${m}</option>`
-      ).join('');
+    // Aggiorna input collection solo se l'utente non sta scrivendo
+    if (data.collection_name) {
+      const inp = document.getElementById('collection-input');
+      if (document.activeElement !== inp) inp.value = data.collection_name;
     }
   } catch {
     dotState(document.getElementById('dot-qdrant'), document.getElementById('lbl-qdrant'), 'Qdrant N/D', false);
     dotState(document.getElementById('dot-ollama'), document.getElementById('lbl-ollama'), 'Ollama N/D', false);
+  }
+}
+
+async function applyCollection() {
+  const name = document.getElementById('collection-input').value.trim();
+  if (!name) return;
+  try {
+    const res = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ qdrant: { collection_name: name } })
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { alert('Errore: ' + (d.detail || 'sconosciuto')); return; }
+    // Aggiorna subito lo status per riflettere la nuova collection
+    pollStatus();
+  } catch (e) {
+    alert('Errore: ' + e.message);
   }
 }
 
@@ -1037,7 +1194,7 @@ async function indexDocuments() {
     fd.append('file', selectedFile);
     fd.append('chunk_strategy', strategy);
     fd.append('chunk_params', JSON.stringify(chunkParams));
-    fd.append('duplicate_policy', dupPolicy);
+    fd.append('duplicate_policy', dupPolicy.toUpperCase());
     if (Object.keys(extraMeta).length) fd.append('extra_metadata', JSON.stringify(extraMeta));
 
     const ext = getExt(selectedFile.name);
@@ -1313,6 +1470,130 @@ async function saveConfig() {
     btn.disabled = false;
     btn.textContent = 'Salva Configurazione';
   }
+}
+
+/* ════════════════════════════════════════════════════════════════
+   TAB 4 – EVALUATION MODE A
+════════════════════════════════════════════════════════════════ */
+let _evalJobId = null;
+let _evalPollTimer = null;
+
+function _scoreClass(v) {
+  if (v >= 0.7) return 'score-high';
+  if (v >= 0.4) return 'score-mid';
+  return 'score-low';
+}
+
+function _metricCard(label, value) {
+  const cls = _scoreClass(value);
+  return `<div class="metric-card">
+    <div class="mc-label">${label}</div>
+    <div class="mc-value ${cls}">${value.toFixed(3)}</div>
+  </div>`;
+}
+
+async function startEvalModeA() {
+  const btn = document.getElementById('btn-eval-a');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Avvio…';
+  document.getElementById('eval-results').style.display = 'none';
+  document.getElementById('eval-progress').style.display = 'none';
+  hideAlert('eval-alert');
+
+  try {
+    const res = await fetch('/api/eval', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Errore server');
+    _evalJobId = data.job_id;
+    document.getElementById('eval-progress').style.display = 'block';
+    showAlert('eval-alert', 'Job avviato — attendo i risultati…', 'info');
+    btn.innerHTML = '<span class="spinner"></span> In corso…';
+    _evalPollTimer = setInterval(_pollEvalJob, 3000);
+  } catch (err) {
+    showAlert('eval-alert', '✗ ' + err.message, 'error');
+    btn.disabled = false;
+    btn.textContent = 'Avvia Evaluation Mode A';
+  }
+}
+
+async function _pollEvalJob() {
+  if (!_evalJobId) return;
+  try {
+    const res = await fetch('/api/eval/' + _evalJobId);
+    const data = await res.json();
+    if (data.status === 'done') {
+      clearInterval(_evalPollTimer);
+      document.getElementById('eval-progress').style.display = 'none';
+      hideAlert('eval-alert');
+      _renderEvalReport(data.report);
+      const btn = document.getElementById('btn-eval-a');
+      btn.disabled = false;
+      btn.textContent = 'Avvia Evaluation Mode A';
+    } else if (data.status === 'error') {
+      clearInterval(_evalPollTimer);
+      document.getElementById('eval-progress').style.display = 'none';
+      showAlert('eval-alert', '✗ ' + (data.error || 'Errore sconosciuto'), 'error');
+      const btn = document.getElementById('btn-eval-a');
+      btn.disabled = false;
+      btn.textContent = 'Avvia Evaluation Mode A';
+    }
+  } catch { /* retry al prossimo tick */ }
+}
+
+function _renderEvalReport(report) {
+  const ir = report.ir_metrics;
+  const kv = report.k_values || [];
+  const elapsed = report.elapsed_time_seconds != null
+    ? report.elapsed_time_seconds.toFixed(1) + ' s' : '—';
+  const reranker = report.reranker_used ? 'Sì' : 'No';
+
+  // Summary
+  document.getElementById('eval-summary').innerHTML =
+    `<span><b>${report.n_samples}</b> campioni</span>` +
+    `<span>Modalità: <b>${report.retrieval_mode}</b></span>` +
+    `<span>Reranker: <b>${reranker}</b></span>` +
+    `<span>Durata: <b>${elapsed}</b></span>`;
+
+  // MRR
+  document.getElementById('eval-mrr-grid').innerHTML =
+    _metricCard('MRR', ir.mrr);
+
+  // Recall@K, HitRate@K, NDCG@K
+  // ir.recall_at_k / hit_rate_at_k / ndcg_at_k sono oggetti {k: valore}
+  let recallHtml = '', hitrateHtml = '', ndcgHtml = '';
+  kv.forEach(k => {
+    recallHtml  += _metricCard(`Recall@${k}`,   (ir.recall_at_k   || {})[k] ?? 0);
+    hitrateHtml += _metricCard(`Hit Rate@${k}`, (ir.hit_rate_at_k || {})[k] ?? 0);
+    ndcgHtml    += _metricCard(`NDCG@${k}`,     (ir.ndcg_at_k     || {})[k] ?? 0);
+  });
+  document.getElementById('eval-recall-grid').innerHTML  = recallHtml;
+  document.getElementById('eval-hitrate-grid').innerHTML = hitrateHtml;
+  document.getElementById('eval-ndcg-grid').innerHTML    = ndcgHtml;
+
+  // Per-sample table
+  const samples = report.per_sample_results || [];
+  if (samples.length) {
+    // Build headers from first sample keys
+    const skip = new Set(['chunk_id', 'question', 'retrieved_ids']);
+    const metricKeys = Object.keys(samples[0]).filter(k => !skip.has(k));
+    document.getElementById('eval-sample-head').innerHTML =
+      '<tr><th>#</th><th>Domanda</th>' +
+      metricKeys.map(k => `<th>${k}</th>`).join('') +
+      '</tr>';
+    document.getElementById('eval-sample-body').innerHTML = samples.map((s, i) => {
+      const q = (s.question || '').slice(0, 80) + ((s.question || '').length > 80 ? '…' : '');
+      return '<tr><td class="num">' + (i + 1) + '</td>' +
+        `<td title="${(s.question||'').replace(/"/g,'&quot;')}">${q}</td>` +
+        metricKeys.map(k => {
+          const v = s[k];
+          const fmt = typeof v === 'number' ? v.toFixed(3) : (v ?? '—');
+          return `<td class="num">${fmt}</td>`;
+        }).join('') +
+        '</tr>';
+    }).join('');
+  }
+
+  document.getElementById('eval-results').style.display = 'block';
 }
 </script>
 </body>

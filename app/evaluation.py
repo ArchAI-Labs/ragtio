@@ -100,34 +100,67 @@ def _extract_chunk_text(record) -> Optional[str]:
     return payload.get("content") or payload.get("text")
 
 
-# ── Ollama helper ─────────────────────────────────────────────────────────────
+# ── LLM helper ────────────────────────────────────────────────────────────────
+
+QueryKind = Literal["question", "keywords"]
 
 
-def _generate_question(chunk_text: str, cfg: AppConfig) -> Optional[str]:
-    """Genera una domanda sintetica per un chunk tramite Ollama."""
-    prompt = cfg.evaluation.mode_a.question_gen_prompt.format(chunk=chunk_text)
-    payload = {
-        "model": cfg.llm.model,
-        "messages": [{"role": "user", "content": prompt}],
-        "options": {
-            "temperature": cfg.llm.temperature,
-            "num_predict": cfg.llm.max_tokens,
-        },
-        "stream": False,
-    }
+def _resolve_query_kind(cfg: AppConfig) -> QueryKind:
+    """Determina il tipo di query da generare in base alla configurazione."""
+    query_type = cfg.evaluation.mode_a.query_type
+    if query_type == "auto":
+        return "keywords" if cfg.retrieval.mode == "sparse" else "question"
+    return query_type  # type: ignore[return-value]
+
+
+def _generate_query(chunk_text: str, kind: QueryKind, cfg: AppConfig) -> Optional[str]:
+    """Genera una domanda sintetica o una lista di keyword per un chunk tramite il LLM."""
+    if kind == "keywords":
+        prompt = cfg.evaluation.mode_a.keyword_gen_prompt.format(chunk=chunk_text)
+    else:
+        prompt = cfg.evaluation.mode_a.question_gen_prompt.format(chunk=chunk_text)
+
     try:
-        with httpx.Client(timeout=cfg.llm.timeout) as client:
-            resp = client.post(f"{cfg.llm.host}/api/chat", json=payload)
-            resp.raise_for_status()
-            return resp.json()["message"]["content"].strip()
+        if cfg.llm.provider == "openai":
+            from openai import OpenAI
+
+            client = OpenAI(
+                api_key=cfg.llm.openai_api_key,
+                base_url=cfg.llm.openai_base_url,
+                timeout=cfg.llm.timeout,
+            )
+            response = client.chat.completions.create(
+                model=cfg.llm.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=cfg.llm.temperature,
+                max_tokens=cfg.llm.max_tokens,
+            )
+            return response.choices[0].message.content.strip()
+        else:
+            payload = {
+                "model": cfg.llm.model,
+                "messages": [{"role": "user", "content": prompt}],
+                "options": {
+                    "temperature": cfg.llm.temperature,
+                    "num_predict": cfg.llm.max_tokens,
+                },
+                "stream": False,
+            }
+            with httpx.Client(timeout=cfg.llm.timeout) as client:
+                resp = client.post(f"{cfg.llm.host}/api/chat", json=payload)
+                resp.raise_for_status()
+                return resp.json()["message"]["content"].strip()
     except httpx.TimeoutException as exc:
-        logger.warning("Timeout Ollama nella generazione della domanda: %s", exc)
+        logger.warning("Timeout LLM nella generazione della query: %s", exc)
         return None
     except httpx.HTTPError as exc:
-        logger.warning("Errore HTTP Ollama nella generazione della domanda: %s", exc)
+        logger.warning("Errore HTTP LLM nella generazione della query: %s", exc)
         return None
     except (KeyError, ValueError) as exc:
-        logger.warning("Risposta Ollama malformata nella generazione della domanda: %s", exc)
+        logger.warning("Risposta LLM malformata nella generazione della query: %s", exc)
+        return None
+    except Exception as exc:
+        logger.warning("Errore LLM nella generazione della query: %s", exc)
         return None
 
 
@@ -168,7 +201,11 @@ def run_evaluation_mode_a(cfg: AppConfig) -> EvaluationReport:
     n_samples = mode_cfg.n_samples
     start = time.monotonic()
 
-    logger.info("Avvio evaluation Mode A: %d campioni, k_values=%s", n_samples, k_values)
+    query_kind = _resolve_query_kind(cfg)
+    logger.info(
+        "Avvio evaluation Mode A: %d campioni, k_values=%s, query_type=%s, retrieval_mode=%s",
+        n_samples, k_values, query_kind, cfg.retrieval.mode,
+    )
 
     # 1. Campionamento chunk casuali
     chunks = _sample_chunks(cfg, n_samples)
@@ -185,21 +222,22 @@ def run_evaluation_mode_a(cfg: AppConfig) -> EvaluationReport:
             logger.warning("Chunk %s senza contenuto testuale, saltato", chunk_id)
             continue
 
-        # 2. Generazione domanda sintetica
-        question = _generate_question(chunk_text, cfg)
-        if not question:
-            logger.warning("Impossibile generare domanda per chunk %s, saltato", chunk_id)
+        # 2. Generazione domanda sintetica o keyword
+        query = _generate_query(chunk_text, query_kind, cfg)
+        if not query:
+            logger.warning("Impossibile generare query per chunk %s, saltato", chunk_id)
             continue
 
         # 3. Retrieval
-        retrieved_docs = retrieve(query=question, cfg=cfg)
+        retrieved_docs = retrieve(query=query, cfg=cfg)
         retrieved_ids = [str(d.id) for d in retrieved_docs if d.id]
         relevant_ids = [chunk_id]
 
         # 4. Calcolo metriche per campione
         sample_result: dict = {
             "chunk_id": chunk_id,
-            "question": question,
+            "query_type": query_kind,
+            "query": query,
             "retrieved_ids": retrieved_ids,
             "mrr": reciprocal_rank(retrieved_ids, relevant_ids),
         }

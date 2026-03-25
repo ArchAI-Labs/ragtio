@@ -1,4 +1,4 @@
-"""FastAPI application for RAG Unicz."""
+"""FastAPI application for RAGtio."""
 import asyncio
 import json
 import logging
@@ -89,31 +89,31 @@ class SystemStatusResponse(BaseModel):
 
 # ── App lifecycle ─────────────────────────────────────────────────────────────
 
+_config_path = os.getenv("CONFIG_PATH", "config.yaml")
+_initial_cfg = load_config(_config_path)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    config_path = os.getenv("CONFIG_PATH", "config.yaml")
-    cfg = load_config(config_path)
-    app.state.cfg = cfg
-    # CORSMiddleware must be added before the middleware stack is first built
-    # (which happens lazily on the first HTTP request, after lifespan startup).
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=cfg.api.cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    app.state.cfg = load_config(os.getenv("CONFIG_PATH", "config.yaml"))
     logger.info(
         "Config caricata. Qdrant: %s:%s, LLM: %s",
-        cfg.qdrant.host,
-        cfg.qdrant.port,
-        cfg.llm.model,
+        app.state.cfg.qdrant.host,
+        app.state.cfg.qdrant.port,
+        app.state.cfg.llm.model,
     )
     yield
 
 
-app = FastAPI(title="RAG Unicz", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="RAGtio", version="1.0.0", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_initial_cfg.api.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Static files (served at /static/...; root GET / serves index.html directly)
 if Path("static").exists():
@@ -479,7 +479,7 @@ async def api_get_config(request: Request):
 
 # Fields that cannot be updated at runtime (infra-level)
 _NON_UPDATABLE: dict = {
-    "qdrant": {"host", "port", "collection_name", "grpc_port"},
+    "qdrant": {"host", "port", "grpc_port"},
 }
 
 

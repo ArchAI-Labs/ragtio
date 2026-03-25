@@ -55,7 +55,13 @@ class IndexingConfig(BaseModel):
 
 
 class LLMConfig(BaseModel):
+    provider: Literal["ollama", "openai"] = "ollama"
+    # Ollama
     host: str = "http://ollama:11434"
+    # OpenAI
+    openai_api_key: Optional[str] = None
+    openai_base_url: Optional[str] = None  # es. per Azure o proxy compatibili
+    # Comune
     model: str = "mistral"
     temperature: float = Field(default=0.1, ge=0.0, le=2.0)
     top_p: float = Field(default=0.9, ge=0.0, le=1.0)
@@ -127,9 +133,18 @@ class LoggingConfig(BaseModel):
 class EvaluationModeAConfig(BaseModel):
     n_samples: int = Field(default=50, ge=1)
     k_values: List[int] = Field(default=[1, 3, 5, 10])
+    # "question" = sempre domanda sintetica (ottimale per Dense/Hybrid)
+    # "keywords" = sempre lista di keyword (ottimale per Sparse/BM25)
+    # "auto"     = domanda per dense/hybrid, keyword per sparse
+    query_type: Literal["question", "keywords", "auto"] = "auto"
     question_gen_prompt: str = (
         "Leggi il seguente testo e formula una domanda a cui il testo risponde direttamente.\n"
         "Restituisci solo la domanda, senza altro testo.\n"
+        "Testo: {chunk}"
+    )
+    keyword_gen_prompt: str = (
+        "Leggi il seguente testo ed estrai da 3 a 6 keyword o brevi frasi chiave che lo rappresentano.\n"
+        "Restituisci solo le keyword separate da virgola, senza altro testo.\n"
         "Testo: {chunk}"
     )
 
@@ -189,14 +204,24 @@ def apply_env_overrides(raw: dict) -> dict:
         raw.setdefault("qdrant", {})["host"] = host
     if port := os.getenv("QDRANT_PORT"):
         raw.setdefault("qdrant", {})["port"] = int(port)
+    if llm_provider := os.getenv("LLM_PROVIDER"):
+        raw.setdefault("llm", {})["provider"] = llm_provider
     if ollama_host := os.getenv("OLLAMA_HOST"):
         raw.setdefault("llm", {})["host"] = ollama_host
     if ollama_model := os.getenv("OLLAMA_MODEL"):
         raw.setdefault("llm", {})["model"] = ollama_model
+    if openai_api_key := os.getenv("OPENAI_API_KEY"):
+        raw.setdefault("llm", {})["openai_api_key"] = openai_api_key
+    if openai_model := os.getenv("OPENAI_MODEL"):
+        raw.setdefault("llm", {})["model"] = openai_model
+    if openai_base_url := os.getenv("OPENAI_BASE_URL"):
+        raw.setdefault("llm", {})["openai_base_url"] = openai_base_url
     if embedder_model := os.getenv("EMBEDDER_MODEL"):
         raw.setdefault("embedder", {})["model"] = embedder_model
     if reranker_model := os.getenv("RERANKER_MODEL"):
         raw.setdefault("reranker", {})["model"] = reranker_model
+    if collection_name := os.getenv("QDRANT_COLLECTION_NAME"):
+        raw.setdefault("qdrant", {})["collection_name"] = collection_name
     if log_level := os.getenv("LOG_LEVEL"):
         raw.setdefault("logging", {})["level"] = log_level
     return raw

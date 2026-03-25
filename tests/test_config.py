@@ -153,3 +153,120 @@ def test_get_config_singleton(tmp_path, monkeypatch):
     cfg1 = get_config()
     cfg2 = get_config()
     assert cfg1 is cfg2
+
+
+# ---------------------------------------------------------------------------
+# Test: nuovi env override
+# ---------------------------------------------------------------------------
+
+
+def test_env_override_openai_api_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-key")
+    cfg_path = write_yaml(tmp_path, MINIMAL_YAML)
+    cfg = load_config(str(cfg_path))
+    assert cfg.llm.openai_api_key == "sk-test-key"
+
+
+def test_env_override_openai_model(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-4o")
+    cfg_path = write_yaml(tmp_path, MINIMAL_YAML)
+    cfg = load_config(str(cfg_path))
+    assert cfg.llm.model == "gpt-4o"
+
+
+def test_env_override_openai_base_url(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://my-proxy.com/v1")
+    cfg_path = write_yaml(tmp_path, MINIMAL_YAML)
+    cfg = load_config(str(cfg_path))
+    assert cfg.llm.openai_base_url == "https://my-proxy.com/v1"
+
+
+def test_env_override_embedder_model(tmp_path, monkeypatch):
+    monkeypatch.setenv("EMBEDDER_MODEL", "BAAI/bge-small-en-v1.5")
+    cfg_path = write_yaml(tmp_path, MINIMAL_YAML)
+    cfg = load_config(str(cfg_path))
+    assert cfg.embedder.model == "BAAI/bge-small-en-v1.5"
+
+
+def test_env_override_reranker_model(tmp_path, monkeypatch):
+    monkeypatch.setenv("RERANKER_MODEL", "cross-encoder/custom")
+    cfg_path = write_yaml(tmp_path, MINIMAL_YAML)
+    cfg = load_config(str(cfg_path))
+    assert cfg.reranker is not None
+    assert cfg.reranker.model == "cross-encoder/custom"
+
+
+def test_env_override_qdrant_collection_name(tmp_path, monkeypatch):
+    monkeypatch.setenv("QDRANT_COLLECTION_NAME", "my_collection")
+    cfg_path = write_yaml(tmp_path, MINIMAL_YAML)
+    cfg = load_config(str(cfg_path))
+    assert cfg.qdrant.collection_name == "my_collection"
+
+
+# ---------------------------------------------------------------------------
+# Test: EvaluationModeAConfig e EvaluationModeBConfig
+# ---------------------------------------------------------------------------
+
+
+def test_evaluation_mode_a_k_values_sorted():
+    from app.config import EvaluationModeAConfig
+
+    cfg = EvaluationModeAConfig(k_values=[10, 1, 5, 3])
+    assert cfg.k_values == [1, 3, 5, 10]
+
+
+def test_evaluation_mode_a_k_values_zero_raises():
+    from app.config import EvaluationModeAConfig
+
+    with pytest.raises(ValueError, match="K devono essere >= 1"):
+        EvaluationModeAConfig(k_values=[0, 5])
+
+
+def test_evaluation_mode_a_k_values_negative_raises():
+    from app.config import EvaluationModeAConfig
+
+    with pytest.raises(ValueError, match="K devono essere >= 1"):
+        EvaluationModeAConfig(k_values=[-1, 5])
+
+
+def test_evaluation_mode_b_k_values_sorted():
+    from app.config import EvaluationModeBConfig
+
+    cfg = EvaluationModeBConfig(k_values=[10, 1, 5])
+    assert cfg.k_values == [1, 5, 10]
+
+
+def test_evaluation_mode_b_k_values_negative_raises():
+    from app.config import EvaluationModeBConfig
+
+    with pytest.raises(ValueError, match="K devono essere >= 1"):
+        EvaluationModeBConfig(k_values=[-1, 5])
+
+
+# ---------------------------------------------------------------------------
+# Test: EvaluationConfig defaults in AppConfig
+# ---------------------------------------------------------------------------
+
+
+def test_app_config_has_evaluation_defaults():
+    cfg = AppConfig()
+    assert cfg.evaluation.default_mode == "A"
+    assert cfg.evaluation.mode_a.n_samples == 50
+    assert cfg.evaluation.mode_a.k_values == [1, 3, 5, 10]
+    assert cfg.evaluation.mode_a.query_type == "auto"
+    assert cfg.evaluation.mode_b.k_folds == 5
+
+
+def test_evaluation_config_loaded_from_yaml(tmp_path):
+    yaml_with_eval = MINIMAL_YAML + """\
+evaluation:
+  default_mode: "B"
+  mode_a:
+    n_samples: 20
+    k_values: [1, 5]
+"""
+    cfg_path = write_yaml(tmp_path, yaml_with_eval)
+    cfg = load_config(str(cfg_path))
+    assert cfg.evaluation.default_mode == "B"
+    assert cfg.evaluation.mode_a.n_samples == 20
+    assert cfg.evaluation.mode_a.k_values == [1, 5]

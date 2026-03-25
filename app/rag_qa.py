@@ -108,23 +108,113 @@ def _collect_docs(query: str, enhanced_queries: List[str], cfg: AppConfig, filte
     return _deduplicate(all_docs)
 
 
-# ── Ollama payload builder ─────────────────────────────────────────────────────
+# ── LLM call helpers ───────────────────────────────────────────────────────────
 
-def _build_payload(context: str, question: str, cfg: AppConfig, stream: bool) -> dict:
+def _build_messages(context: str, question: str, cfg: AppConfig) -> list:
     prompt = cfg.llm.rag_prompt_template.format(context=context, question=question)
-    return {
+    return [
+        {"role": "system", "content": cfg.llm.system_prompt},
+        {"role": "user", "content": prompt},
+    ]
+
+
+async def _call_ollama(context: str, question: str, cfg: AppConfig) -> str:
+    messages = _build_messages(context, question, cfg)
+    payload = {
         "model": cfg.llm.model,
-        "messages": [
-            {"role": "system", "content": cfg.llm.system_prompt},
-            {"role": "user", "content": prompt},
-        ],
+        "messages": messages,
         "options": {
             "temperature": cfg.llm.temperature,
             "top_p": cfg.llm.top_p,
             "num_predict": cfg.llm.max_tokens,
         },
-        "stream": stream,
+        "stream": False,
     }
+    async with httpx.AsyncClient(timeout=cfg.llm.timeout) as client:
+        response = await client.post(f"{cfg.llm.host}/api/chat", json=payload)
+        response.raise_for_status()
+        return response.json()["message"]["content"]
+
+
+async def _call_openai(context: str, question: str, cfg: AppConfig) -> str:
+    from openai import AsyncOpenAI
+
+    messages = _build_messages(context, question, cfg)
+    client = AsyncOpenAI(
+        api_key=cfg.llm.openai_api_key,
+        base_url=cfg.llm.openai_base_url,
+        timeout=cfg.llm.timeout,
+    )
+    response = await client.chat.completions.create(
+        model=cfg.llm.model,
+        messages=messages,
+        temperature=cfg.llm.temperature,
+        top_p=cfg.llm.top_p,
+        max_tokens=cfg.llm.max_tokens,
+    )
+    return response.choices[0].message.content
+
+
+async def _stream_ollama(context: str, question: str, cfg: AppConfig) -> AsyncGenerator[str, None]:
+    messages = _build_messages(context, question, cfg)
+    payload = {
+        "model": cfg.llm.model,
+        "messages": messages,
+        "options": {
+            "temperature": cfg.llm.temperature,
+            "top_p": cfg.llm.top_p,
+            "num_predict": cfg.llm.max_tokens,
+        },
+        "stream": True,
+    }
+    async with httpx.AsyncClient(timeout=cfg.llm.timeout) as client:
+        async with client.stream("POST", f"{cfg.llm.host}/api/chat", json=payload) as resp:
+            resp.raise_for_status()
+            async for line in resp.aiter_lines():
+                if line:
+                    data = json.loads(line)
+                    if token := data.get("message", {}).get("content"):
+                        yield token
+                    if data.get("done"):
+                        break
+
+
+async def _stream_openai(context: str, question: str, cfg: AppConfig) -> AsyncGenerator[str, None]:
+    from openai import AsyncOpenAI
+
+    messages = _build_messages(context, question, cfg)
+    client = AsyncOpenAI(
+        api_key=cfg.llm.openai_api_key,
+        base_url=cfg.llm.openai_base_url,
+        timeout=cfg.llm.timeout,
+    )
+    stream = await client.chat.completions.create(
+        model=cfg.llm.model,
+        messages=messages,
+        temperature=cfg.llm.temperature,
+        top_p=cfg.llm.top_p,
+        max_tokens=cfg.llm.max_tokens,
+        stream=True,
+    )
+    async for chunk in stream:
+        token = chunk.choices[0].delta.content
+        if token:
+            yield token
+
+
+async def _call_llm(context: str, question: str, cfg: AppConfig) -> str:
+    if cfg.llm.provider == "openai":
+        return await _call_openai(context, question, cfg)
+    return await _call_ollama(context, question, cfg)
+
+
+async def _stream_llm(context: str, question: str, cfg: AppConfig) -> AsyncGenerator[str, None]:
+    if cfg.llm.provider == "openai":
+        async for token in _stream_openai(context, question, cfg):
+            yield token
+    else:
+        async for token in _stream_ollama(context, question, cfg):
+            yield token
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
@@ -137,7 +227,7 @@ async def ask(
     import time
 
     start = time.monotonic()
-    logger.info("Avvio ask: '%s'", query[:80])
+    logger.info("Avvio ask [provider=%s]: '%s'", cfg.llm.provider, query[:80])
 
     enhanced = enhance_query(query, cfg)
     docs = _collect_docs(query, enhanced.all_queries, cfg, filters)
@@ -155,12 +245,7 @@ async def ask(
         )
 
     context, n_included = build_context(docs, max_context_length=cfg.llm.max_context_length)
-    payload = _build_payload(context, query, cfg, stream=False)
-
-    async with httpx.AsyncClient(timeout=cfg.llm.timeout) as client:
-        response = await client.post(f"{cfg.llm.host}/api/chat", json=payload)
-        response.raise_for_status()
-        answer = response.json()["message"]["content"]
+    answer = await _call_llm(context, query, cfg)
 
     logger.info(
         "ask completato in %.2f s: %d doc recuperati, %d nel contesto",
@@ -186,7 +271,7 @@ async def ask_stream(
     import time
 
     start = time.monotonic()
-    logger.info("Avvio ask_stream: '%s'", query[:80])
+    logger.info("Avvio ask_stream [provider=%s]: '%s'", cfg.llm.provider, query[:80])
 
     enhanced = enhance_query(query, cfg)
     docs = _collect_docs(query, enhanced.all_queries, cfg, filters)
@@ -202,17 +287,8 @@ async def ask_stream(
         len(docs),
         n_included,
     )
-    payload = _build_payload(context, query, cfg, stream=True)
 
-    async with httpx.AsyncClient(timeout=cfg.llm.timeout) as client:
-        async with client.stream("POST", f"{cfg.llm.host}/api/chat", json=payload) as resp:
-            resp.raise_for_status()
-            async for line in resp.aiter_lines():
-                if line:
-                    data = json.loads(line)
-                    if token := data.get("message", {}).get("content"):
-                        yield token
-                    if data.get("done"):
-                        break
+    async for token in _stream_llm(context, query, cfg):
+        yield token
 
     logger.info("ask_stream completato in %.2f s", time.monotonic() - start)
