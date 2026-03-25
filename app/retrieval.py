@@ -58,7 +58,6 @@ def _build_dense_pipeline(cfg: AppConfig, store: Any) -> Pipeline:
         FastembedTextEmbedder(
             model=cfg.embedder.model,
             cache_dir=cfg.embedder.cache_dir,
-            max_length=cfg.embedder.max_length,
         ),
     )
     pipeline.add_component("retriever", QdrantEmbeddingRetriever(document_store=store))
@@ -99,7 +98,6 @@ def _build_hybrid_pipeline(cfg: AppConfig, store: Any) -> Pipeline:
         FastembedTextEmbedder(
             model=cfg.embedder.model,
             cache_dir=cfg.embedder.cache_dir,
-            max_length=cfg.embedder.max_length,
         ),
     )
     pipeline.add_component(

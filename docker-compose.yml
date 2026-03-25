@@ -43,19 +43,22 @@ services:
     image: curlimages/curl:latest
     container_name: rag_ollama_init
     restart: "no"
+    environment:
+      - OLLAMA_MODEL=qwen3:4b
     depends_on:
       ollama:
         condition: service_started
-    entrypoint: >
-      sh -c "
+    entrypoint:
+      - sh
+      - -c
+      - |
         echo 'Attesa disponibilità Ollama...';
         until curl -sf http://ollama:11434/api/tags > /dev/null; do sleep 2; done;
-        echo 'Scaricamento modello: ${OLLAMA_MODEL:-mistral}';
-        curl -X POST http://ollama:11434/api/pull
-          -H 'Content-Type: application/json'
-          -d \"{\\\"name\\\": \\\"${OLLAMA_MODEL:-mistral}\\\"}\";
+        echo "Scaricamento modello: ${OLLAMA_MODEL:-mistral}";
+        curl -sf -X POST http://ollama:11434/api/pull \
+          -H 'Content-Type: application/json' \
+          -d "{\"name\": \"${OLLAMA_MODEL:-mistral}\"}";
         echo 'Modello scaricato con successo.'
-      "
     networks:
       - rag_network
 
