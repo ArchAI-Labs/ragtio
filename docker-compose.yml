@@ -1,7 +1,7 @@
 services:
 
   qdrant:
-    image: qdrant/qdrant:v1.9.0
+    image: qdrant/qdrant:v1.13.6
     container_name: rag_qdrant
     restart: unless-stopped
     ports:
@@ -54,10 +54,10 @@ services:
       - |
         echo 'Attesa disponibilità Ollama...';
         until curl -sf http://ollama:11434/api/tags > /dev/null; do sleep 2; done;
-        echo "Scaricamento modello: ${OLLAMA_MODEL:-mistral}";
+        echo "Scaricamento modello: $${OLLAMA_MODEL:-mistral}";
         curl -sf -X POST http://ollama:11434/api/pull \
           -H 'Content-Type: application/json' \
-          -d "{\"name\": \"${OLLAMA_MODEL:-mistral}\"}";
+          -d "{\"name\": \"$${OLLAMA_MODEL:-mistral}\"}";
         echo 'Modello scaricato con successo.'
     networks:
       - rag_network

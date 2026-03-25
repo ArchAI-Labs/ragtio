@@ -1318,7 +1318,7 @@ async function sendQuery() {
 
   const payload = {
     query:      queryText,
-    mode:       document.querySelector('input[name="retrieval-mode"]:checked').value,
+    retrieval_mode: document.querySelector('input[name="retrieval-mode"]:checked').value,
     top_k:      +document.getElementById('top-k').value,
     top_n:      +document.getElementById('top-n').value,
     stream:     useStream,

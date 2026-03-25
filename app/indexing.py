@@ -307,6 +307,13 @@ def build_index(
         else DuplicatePolicy.OVERWRITE
     )
 
+    from haystack_integrations.components.embedders.fastembed import (
+        FastembedSparseDocumentEmbedder,
+    )
+
+    docs_to_write = valid_chunks
+
+    # Step 4a: Dense embedding
     if embedder is None:
         _register_custom_embedder(cfg.embedder)
         embedder = FastEmbedDocumentEmbedder(
@@ -314,16 +321,18 @@ def build_index(
             batch_size=cfg.indexing.batch_size,
             cache_dir=cfg.embedder.cache_dir,
         )
+    embedder.warm_up()
+    docs_to_write = embedder.run(documents=docs_to_write)["documents"]
+
+    # Step 4b: Sparse embedding (always, so all retrieval modes work without re-indexing)
+    sparse_embedder = FastembedSparseDocumentEmbedder(cache_dir=cfg.embedder.cache_dir)
+    sparse_embedder.warm_up()
+    docs_to_write = sparse_embedder.run(documents=docs_to_write)["documents"]
 
     writer = DocumentWriter(document_store=document_store, policy=policy)
 
-    pipeline = Pipeline()
-    pipeline.add_component("embedder", embedder)
-    pipeline.add_component("writer", writer)
-    pipeline.connect("embedder.documents", "writer.documents")
-
-    output = pipeline.run({"embedder": {"documents": valid_chunks}})
-    n_written = output.get("writer", {}).get("documents_written", 0)
+    output = writer.run(documents=docs_to_write)
+    n_written = output.get("documents_written", 0)
 
     elapsed = time.monotonic() - start
     logger.info(
