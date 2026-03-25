@@ -556,7 +556,7 @@ async def api_delete_index(
     try:
         from haystack_integrations.document_stores.qdrant import QdrantDocumentStore
 
-        embedding_dim = _get_embedding_dim(cfg.embedder.model)
+        embedding_dim = _get_embedding_dim(cfg.embedder)
         QdrantDocumentStore(
             host=cfg.qdrant.host,
             port=cfg.qdrant.port,

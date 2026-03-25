@@ -8,7 +8,7 @@ from typing import Any, List, Optional
 from haystack import Document, Pipeline, component
 from haystack.components.preprocessors import DocumentCleaner, DocumentSplitter
 
-from app.config import AppConfig
+from app.config import AppConfig, EmbedderConfig
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +18,71 @@ _EMBEDDING_DIMS = {
     "BAAI/bge-base-en-v1.5": 768,
     "BAAI/bge-large-en-v1.5": 1024,
     "BAAI/bge-base-zh-v1.5": 768,
+    "intfloat/multilingual-e5-base": 768,
+    "intfloat/multilingual-e5-large": 1024,
+    "intfloat/multilingual-e5-small": 384,
     "sentence-transformers/all-MiniLM-L6-v2": 384,
 }
+
+
+def _register_custom_embedder(cfg: EmbedderConfig) -> None:
+    """Registra un custom embedder ONNX via TextEmbedding.add_custom_model().
+
+    Deve essere chiamata prima di istanziare qualsiasi FastembedTextEmbedder
+    quando cfg.custom è presente.
+    """
+    if cfg.custom is None:
+        return
+    from fastembed import TextEmbedding
+    from fastembed.common.model_description import ModelSource, PoolingType
+
+    TextEmbedding.add_custom_model(
+        model=cfg.model,
+        pooling=PoolingType[cfg.custom.pooling],
+        normalization=cfg.custom.normalization,
+        sources=ModelSource(
+            hf=cfg.custom.hf_repo,
+            url=cfg.custom.url,
+        ),
+        dim=cfg.custom.dim,
+        model_file=cfg.custom.model_file,
+    )
+    logger.debug(
+        "Custom embedder registrato: model=%s dim=%d pooling=%s",
+        cfg.model,
+        cfg.custom.dim,
+        cfg.custom.pooling,
+    )
+
+
+def _get_embedding_dim(cfg: EmbedderConfig) -> int:
+    """Risolve la dimensione del vettore di embedding con priorità decrescente:
+    1. cfg.embedding_dim (override esplicito)
+    2. cfg.custom.dim (custom embedder)
+    3. dizionario statico noto
+    4. query a fastembed a runtime (fallback)
+    """
+    if cfg.embedding_dim is not None:
+        return cfg.embedding_dim
+    if cfg.custom is not None:
+        return cfg.custom.dim
+    if cfg.model in _EMBEDDING_DIMS:
+        return _EMBEDDING_DIMS[cfg.model]
+    # Fallback: interroga fastembed direttamente
+    try:
+        from fastembed import TextEmbedding
+        _register_custom_embedder(cfg)
+        model = TextEmbedding(model_name=cfg.model, cache_dir=cfg.cache_dir)
+        dim = model.dim
+        logger.info("Dimensione embedding rilevata da fastembed: model=%s dim=%d", cfg.model, dim)
+        return dim
+    except Exception as exc:
+        logger.warning(
+            "Impossibile rilevare la dimensione per '%s' (%s). Uso fallback 1024.",
+            cfg.model,
+            exc,
+        )
+        return 1024
 
 
 @dataclass
@@ -31,10 +94,6 @@ class IndexingResult:
     n_documents_written: int
     elapsed_time_seconds: float
     errors: List[str] = field(default_factory=list)
-
-
-def _get_embedding_dim(model_name: str) -> int:
-    return _EMBEDDING_DIMS.get(model_name, 1024)
 
 
 @component
@@ -179,7 +238,7 @@ def build_index(
 
     # Crea document store se non fornito
     if document_store is None:
-        embedding_dim = _get_embedding_dim(cfg.embedder.model)
+        embedding_dim = _get_embedding_dim(cfg.embedder)
         document_store = QdrantDocumentStore(
             host=cfg.qdrant.host,
             port=cfg.qdrant.port,
@@ -249,9 +308,11 @@ def build_index(
     )
 
     if embedder is None:
+        _register_custom_embedder(cfg.embedder)
         embedder = FastEmbedDocumentEmbedder(
             model=cfg.embedder.model,
             batch_size=cfg.indexing.batch_size,
+            cache_dir=cfg.embedder.cache_dir,
         )
 
     writer = DocumentWriter(document_store=document_store, policy=policy)

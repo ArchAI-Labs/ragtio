@@ -5,6 +5,8 @@ from pathlib import Path
 from app.config import (
     AppConfig,
     ChunkingConfig,
+    CustomEmbedderConfig,
+    EmbedderConfig,
     load_config,
     get_config,
     _config,
@@ -270,3 +272,135 @@ evaluation:
     assert cfg.evaluation.default_mode == "B"
     assert cfg.evaluation.mode_a.n_samples == 20
     assert cfg.evaluation.mode_a.k_values == [1, 5]
+
+
+# ---------------------------------------------------------------------------
+# Test: nuovi env override embedder
+# ---------------------------------------------------------------------------
+
+
+def test_env_override_embedder_batch_size(tmp_path, monkeypatch):
+    monkeypatch.setenv("EMBEDDER_BATCH_SIZE", "16")
+    cfg_path = write_yaml(tmp_path, MINIMAL_YAML)
+    cfg = load_config(str(cfg_path))
+    assert cfg.embedder.batch_size == 16
+
+
+def test_env_override_embedder_max_length(tmp_path, monkeypatch):
+    monkeypatch.setenv("EMBEDDER_MAX_LENGTH", "256")
+    cfg_path = write_yaml(tmp_path, MINIMAL_YAML)
+    cfg = load_config(str(cfg_path))
+    assert cfg.embedder.max_length == 256
+
+
+def test_env_override_embedder_cache_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("EMBEDDER_CACHE_DIR", "/tmp/my-models")
+    cfg_path = write_yaml(tmp_path, MINIMAL_YAML)
+    cfg = load_config(str(cfg_path))
+    assert cfg.embedder.cache_dir == "/tmp/my-models"
+
+
+def test_env_override_embedder_dim(tmp_path, monkeypatch):
+    monkeypatch.setenv("EMBEDDER_DIM", "768")
+    cfg_path = write_yaml(tmp_path, MINIMAL_YAML)
+    cfg = load_config(str(cfg_path))
+    assert cfg.embedder.embedding_dim == 768
+
+
+# ---------------------------------------------------------------------------
+# Test: custom embedder via env vars
+# ---------------------------------------------------------------------------
+
+
+def test_env_override_custom_embedder_hf(tmp_path, monkeypatch):
+    monkeypatch.setenv("EMBEDDER_CUSTOM_DIM", "384")
+    monkeypatch.setenv("EMBEDDER_CUSTOM_HF_REPO", "org/my-model")
+    monkeypatch.setenv("EMBEDDER_CUSTOM_POOLING", "CLS")
+    monkeypatch.setenv("EMBEDDER_CUSTOM_NORMALIZATION", "false")
+    monkeypatch.setenv("EMBEDDER_CUSTOM_MODEL_FILE", "onnx/model_quant.onnx")
+    cfg_path = write_yaml(tmp_path, MINIMAL_YAML)
+    cfg = load_config(str(cfg_path))
+
+    assert cfg.embedder.custom is not None
+    assert cfg.embedder.custom.dim == 384
+    assert cfg.embedder.custom.hf_repo == "org/my-model"
+    assert cfg.embedder.custom.pooling == "CLS"
+    assert cfg.embedder.custom.normalization is False
+    assert cfg.embedder.custom.model_file == "onnx/model_quant.onnx"
+
+
+def test_env_override_custom_embedder_normalization_true(tmp_path, monkeypatch):
+    monkeypatch.setenv("EMBEDDER_CUSTOM_DIM", "512")
+    monkeypatch.setenv("EMBEDDER_CUSTOM_HF_REPO", "org/model")
+    monkeypatch.setenv("EMBEDDER_CUSTOM_NORMALIZATION", "true")
+    cfg_path = write_yaml(tmp_path, MINIMAL_YAML)
+    cfg = load_config(str(cfg_path))
+    assert cfg.embedder.custom.normalization is True
+
+
+def test_env_override_custom_embedder_url(tmp_path, monkeypatch):
+    monkeypatch.setenv("EMBEDDER_CUSTOM_DIM", "256")
+    monkeypatch.setenv("EMBEDDER_CUSTOM_URL", "https://example.com/model.tar.gz")
+    cfg_path = write_yaml(tmp_path, MINIMAL_YAML)
+    cfg = load_config(str(cfg_path))
+    assert cfg.embedder.custom.url == "https://example.com/model.tar.gz"
+    assert cfg.embedder.custom.hf_repo is None
+
+
+def test_custom_embedder_not_activated_without_dim(tmp_path, monkeypatch):
+    # senza EMBEDDER_CUSTOM_DIM il blocco custom non viene attivato
+    monkeypatch.setenv("EMBEDDER_CUSTOM_HF_REPO", "org/model")
+    cfg_path = write_yaml(tmp_path, MINIMAL_YAML)
+    cfg = load_config(str(cfg_path))
+    assert cfg.embedder.custom is None
+
+
+# ---------------------------------------------------------------------------
+# Test: CustomEmbedderConfig validazione
+# ---------------------------------------------------------------------------
+
+
+def test_custom_embedder_config_requires_source():
+    with pytest.raises(ValueError, match="almeno uno tra"):
+        CustomEmbedderConfig(dim=384)
+
+
+def test_custom_embedder_config_hf_repo_ok():
+    cfg = CustomEmbedderConfig(dim=384, hf_repo="org/model")
+    assert cfg.hf_repo == "org/model"
+    assert cfg.url is None
+
+
+def test_custom_embedder_config_url_ok():
+    cfg = CustomEmbedderConfig(dim=768, url="https://example.com/m.tar.gz")
+    assert cfg.url == "https://example.com/m.tar.gz"
+
+
+def test_custom_embedder_config_defaults():
+    cfg = CustomEmbedderConfig(dim=384, hf_repo="org/model")
+    assert cfg.pooling == "MEAN"
+    assert cfg.normalization is True
+    assert cfg.model_file == "onnx/model.onnx"
+
+
+# ---------------------------------------------------------------------------
+# Test: custom embedder via YAML
+# ---------------------------------------------------------------------------
+
+
+def test_custom_embedder_loaded_from_yaml(tmp_path):
+    yaml_with_custom = MINIMAL_YAML + """\
+embedder:
+  model: "org/my-model"
+  custom:
+    dim: 384
+    pooling: "MEAN"
+    normalization: true
+    hf_repo: "org/my-model"
+    model_file: "onnx/model.onnx"
+"""
+    cfg_path = write_yaml(tmp_path, yaml_with_custom)
+    cfg = load_config(str(cfg_path))
+    assert cfg.embedder.custom is not None
+    assert cfg.embedder.custom.dim == 384
+    assert cfg.embedder.custom.hf_repo == "org/my-model"

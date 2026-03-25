@@ -19,11 +19,30 @@ class QdrantConfig(BaseModel):
     timeout: int = Field(default=30, ge=1)
 
 
+class CustomEmbedderConfig(BaseModel):
+    """Parametri per registrare un modello ONNX custom via TextEmbedding.add_custom_model()."""
+
+    pooling: Literal["MEAN", "CLS", "MAX"] = "MEAN"
+    normalization: bool = True
+    hf_repo: Optional[str] = None   # sources=ModelSource(hf=...)
+    url: Optional[str] = None       # sources=ModelSource(url=...)
+    model_file: str = "onnx/model.onnx"
+    dim: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def require_at_least_one_source(self) -> "CustomEmbedderConfig":
+        if not self.hf_repo and not self.url:
+            raise ValueError("custom embedder richiede almeno uno tra 'hf_repo' e 'url'")
+        return self
+
+
 class EmbedderConfig(BaseModel):
     model: str = "BAAI/bge-m3"
     batch_size: int = Field(default=32, ge=1)
     max_length: int = Field(default=512, ge=64, le=8192)
     cache_dir: str = "/app/models/fastembed"
+    embedding_dim: Optional[int] = Field(default=None, ge=1)  # override manuale dimensione vettore
+    custom: Optional[CustomEmbedderConfig] = None             # presente solo per modelli custom ONNX
 
 
 class ChunkingConfig(BaseModel):
@@ -218,6 +237,27 @@ def apply_env_overrides(raw: dict) -> dict:
         raw.setdefault("llm", {})["openai_base_url"] = openai_base_url
     if embedder_model := os.getenv("EMBEDDER_MODEL"):
         raw.setdefault("embedder", {})["model"] = embedder_model
+    if embedder_batch_size := os.getenv("EMBEDDER_BATCH_SIZE"):
+        raw.setdefault("embedder", {})["batch_size"] = int(embedder_batch_size)
+    if embedder_max_length := os.getenv("EMBEDDER_MAX_LENGTH"):
+        raw.setdefault("embedder", {})["max_length"] = int(embedder_max_length)
+    if embedder_cache_dir := os.getenv("EMBEDDER_CACHE_DIR"):
+        raw.setdefault("embedder", {})["cache_dir"] = embedder_cache_dir
+    if embedder_dim := os.getenv("EMBEDDER_DIM"):
+        raw.setdefault("embedder", {})["embedding_dim"] = int(embedder_dim)
+    # Custom embedder via add_custom_model()
+    if custom_dim := os.getenv("EMBEDDER_CUSTOM_DIM"):
+        raw.setdefault("embedder", {}).setdefault("custom", {})["dim"] = int(custom_dim)
+        if custom_pooling := os.getenv("EMBEDDER_CUSTOM_POOLING"):
+            raw["embedder"]["custom"]["pooling"] = custom_pooling
+        if custom_norm := os.getenv("EMBEDDER_CUSTOM_NORMALIZATION"):
+            raw["embedder"]["custom"]["normalization"] = custom_norm.lower() not in ("false", "0", "no")
+        if custom_hf := os.getenv("EMBEDDER_CUSTOM_HF_REPO"):
+            raw["embedder"]["custom"]["hf_repo"] = custom_hf
+        if custom_url := os.getenv("EMBEDDER_CUSTOM_URL"):
+            raw["embedder"]["custom"]["url"] = custom_url
+        if custom_file := os.getenv("EMBEDDER_CUSTOM_MODEL_FILE"):
+            raw["embedder"]["custom"]["model_file"] = custom_file
     if reranker_model := os.getenv("RERANKER_MODEL"):
         raw.setdefault("reranker", {})["model"] = reranker_model
     if collection_name := os.getenv("QDRANT_COLLECTION_NAME"):

@@ -8,10 +8,17 @@ qdrant:
   timeout: 30
 
 embedder:
-  model: "intfloat/multilingual-e5-base"
+  model: "intfloat/multilingual-e5-large"
   batch_size: 32
   max_length: 512
   cache_dir: "/app/models/fastembed"
+  # embedding_dim: null     # override manuale della dimensione vettore (auto se null)
+  # custom:                 # decommenta per usare un modello ONNX non supportato nativamente
+  #   pooling: "MEAN"       # MEAN | CLS | MAX
+  #   normalization: true
+  #   hf_repo: "org/model-name"   # oppure url: "https://..."
+  #   model_file: "onnx/model.onnx"
+  #   dim: 384
 
 indexing:
   chunking:

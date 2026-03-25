@@ -7,8 +7,16 @@ from typing import List
 import pytest
 from haystack import Document, component
 
-from app.config import AppConfig
-from app.indexing import IndexingResult, RecursiveDocumentSplitter, build_index
+from unittest.mock import MagicMock, patch
+
+from app.config import AppConfig, CustomEmbedderConfig, EmbedderConfig
+from app.indexing import (
+    IndexingResult,
+    RecursiveDocumentSplitter,
+    _get_embedding_dim,
+    _register_custom_embedder,
+    build_index,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -333,3 +341,107 @@ class TestRecursiveDocumentSplitter:
         docs = [Document(content=text)]
         result = splitter.run(documents=docs)
         assert len(result["documents"]) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Test _get_embedding_dim — priorità di risoluzione
+# ---------------------------------------------------------------------------
+
+
+class TestGetEmbeddingDim:
+    def test_embedding_dim_override_takes_priority(self):
+        cfg = EmbedderConfig(model="BAAI/bge-m3", embedding_dim=999)
+        assert _get_embedding_dim(cfg) == 999
+
+    def test_custom_dim_used_when_no_override(self):
+        custom = CustomEmbedderConfig(dim=256, hf_repo="org/model")
+        cfg = EmbedderConfig(model="org/model", custom=custom)
+        assert _get_embedding_dim(cfg) == 256
+
+    def test_embedding_dim_wins_over_custom_dim(self):
+        custom = CustomEmbedderConfig(dim=256, hf_repo="org/model")
+        cfg = EmbedderConfig(model="org/model", embedding_dim=512, custom=custom)
+        assert _get_embedding_dim(cfg) == 512
+
+    def test_known_model_from_dict(self):
+        cfg = EmbedderConfig(model="BAAI/bge-m3")
+        assert _get_embedding_dim(cfg) == 1024
+
+    def test_known_model_small(self):
+        cfg = EmbedderConfig(model="BAAI/bge-small-en-v1.5")
+        assert _get_embedding_dim(cfg) == 384
+
+    def test_known_model_multilingual_base(self):
+        cfg = EmbedderConfig(model="intfloat/multilingual-e5-base")
+        assert _get_embedding_dim(cfg) == 768
+
+    def test_unknown_model_fallback(self):
+        # modello sconosciuto: fastembed viene chiamato lazily dentro la funzione,
+        # simuliamo il fallback patchando il modulo fastembed prima che venga importato
+        cfg = EmbedderConfig(model="unknown/model-xyz")
+        mock_te = MagicMock(side_effect=Exception("model not found"))
+        with patch.dict("sys.modules", {"fastembed": MagicMock(TextEmbedding=mock_te)}):
+            result = _get_embedding_dim(cfg)
+        assert isinstance(result, int)
+        assert result == 1024  # valore di fallback
+
+
+# ---------------------------------------------------------------------------
+# Test _register_custom_embedder
+# ---------------------------------------------------------------------------
+
+
+class TestRegisterCustomEmbedder:
+    def test_no_op_when_custom_is_none(self):
+        cfg = EmbedderConfig(model="BAAI/bge-m3")
+        # non deve sollevare eccezioni né chiamare fastembed
+        _register_custom_embedder(cfg)  # smoke test
+
+    def test_calls_add_custom_model_with_hf(self):
+        custom = CustomEmbedderConfig(dim=384, hf_repo="org/my-model", pooling="MEAN")
+        cfg = EmbedderConfig(model="org/my-model", custom=custom)
+
+        mock_pooling = MagicMock()
+        mock_pooling.__getitem__ = MagicMock(return_value=MagicMock())
+        mock_source_cls = MagicMock()
+        mock_te = MagicMock()
+
+        with patch.dict("sys.modules", {
+            "fastembed": MagicMock(TextEmbedding=mock_te),
+            "fastembed.common.model_description": MagicMock(
+                ModelSource=mock_source_cls,
+                PoolingType=mock_pooling,
+            ),
+        }):
+            # re-import per usare i mock
+            import importlib
+            import app.indexing as idx_mod
+            importlib.reload(idx_mod)
+            idx_mod._register_custom_embedder(cfg)
+            mock_te.add_custom_model.assert_called_once()
+            call_kwargs = mock_te.add_custom_model.call_args.kwargs
+            assert call_kwargs["model"] == "org/my-model"
+            assert call_kwargs["dim"] == 384
+
+    def test_calls_add_custom_model_with_url(self):
+        custom = CustomEmbedderConfig(dim=512, url="https://example.com/m.tar.gz")
+        cfg = EmbedderConfig(model="my/model", custom=custom)
+
+        mock_pooling = MagicMock()
+        mock_pooling.__getitem__ = MagicMock(return_value=MagicMock())
+        mock_source_cls = MagicMock()
+        mock_te = MagicMock()
+
+        with patch.dict("sys.modules", {
+            "fastembed": MagicMock(TextEmbedding=mock_te),
+            "fastembed.common.model_description": MagicMock(
+                ModelSource=mock_source_cls,
+                PoolingType=mock_pooling,
+            ),
+        }):
+            import importlib
+            import app.indexing as idx_mod
+            importlib.reload(idx_mod)
+            idx_mod._register_custom_embedder(cfg)
+            call_kwargs = mock_te.add_custom_model.call_args.kwargs
+            assert call_kwargs["dim"] == 512

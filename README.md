@@ -302,6 +302,16 @@ The following environment variables override values in `config.yaml`:
 | `QDRANT_PORT` | Qdrant REST port | `6333` |
 | `QDRANT_COLLECTION_NAME` | Collection name | `documents` |
 | `EMBEDDER_MODEL` | FastEmbed model for embeddings | `intfloat/multilingual-e5-base` |
+| `EMBEDDER_BATCH_SIZE` | Number of texts processed per batch during embedding | `32` |
+| `EMBEDDER_MAX_LENGTH` | Maximum token length per input to the embedder | `512` |
+| `EMBEDDER_CACHE_DIR` | Local directory where FastEmbed caches downloaded models | `/app/models/fastembed` |
+| `EMBEDDER_DIM` | Manual override of the embedding vector dimension | auto-detected |
+| `EMBEDDER_CUSTOM_DIM` | Vector dimension for a custom ONNX model *(required to activate custom mode)* | — |
+| `EMBEDDER_CUSTOM_POOLING` | Pooling strategy: `MEAN`, `CLS`, or `MAX` | `MEAN` |
+| `EMBEDDER_CUSTOM_NORMALIZATION` | Whether to L2-normalize output vectors | `true` |
+| `EMBEDDER_CUSTOM_HF_REPO` | Hugging Face repo ID of the custom model | — |
+| `EMBEDDER_CUSTOM_URL` | Direct URL to the ONNX model archive *(alternative to `HF_REPO`)* | — |
+| `EMBEDDER_CUSTOM_MODEL_FILE` | Path to the `.onnx` file inside the repo/archive | `onnx/model.onnx` |
 | `RERANKER_MODEL` | Cross-encoder model for reranking | `cross-encoder/ms-marco-MiniLM-L-6-v2` |
 | `LOG_LEVEL` | Log level (`DEBUG`, `INFO`, `WARNING`) | `INFO` |
 | `CONFIG_PATH` | Configuration file path | `config.yaml` |
@@ -361,6 +371,40 @@ OPENAI_MODEL=gpt-4o-mini
 
 The `ollama` and `ollama-init` services remain active in the stack but are not used for generation.
 Embeddings continue to be computed locally via FastEmbed.
+
+---
+
+## Using a Custom Embedding Model
+
+FastEmbed supports any model that has an ONNX export, even if it is not in the official supported list.
+Use `EMBEDDER_CUSTOM_*` variables to register it before the embedder is instantiated.
+
+**Example — load a model from Hugging Face:**
+
+```env
+EMBEDDER_MODEL=intfloat/multilingual-e5-small
+EMBEDDER_CUSTOM_DIM=384
+EMBEDDER_CUSTOM_POOLING=MEAN
+EMBEDDER_CUSTOM_NORMALIZATION=true
+EMBEDDER_CUSTOM_HF_REPO=intfloat/multilingual-e5-small
+EMBEDDER_CUSTOM_MODEL_FILE=onnx/model.onnx
+```
+
+Or equivalently via `config.yaml`:
+
+```yaml
+embedder:
+  model: "intfloat/multilingual-e5-small"
+  custom:
+    dim: 384
+    pooling: "MEAN"
+    normalization: true
+    hf_repo: "intfloat/multilingual-e5-small"
+    model_file: "onnx/model.onnx"
+```
+
+> **Note:** when switching to a different embedding model you must delete and re-index all documents,
+> because the vector dimension stored in Qdrant must match the new model's output.
 
 ---
 

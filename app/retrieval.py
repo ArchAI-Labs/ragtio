@@ -25,16 +25,17 @@ def _get_document_store(cfg: AppConfig, document_store=None) -> Any:
 
     from haystack_integrations.document_stores.qdrant import QdrantDocumentStore
 
-    from app.indexing import _get_embedding_dim
+    from app.indexing import _get_embedding_dim, _register_custom_embedder
 
     key = f"{cfg.qdrant.host}:{cfg.qdrant.port}:{cfg.qdrant.collection_name}"
     if key not in _stores:
+        _register_custom_embedder(cfg.embedder)
         _stores[key] = QdrantDocumentStore(
             host=cfg.qdrant.host,
             port=cfg.qdrant.port,
             api_key=cfg.qdrant.api_key,
             index=cfg.qdrant.collection_name,
-            embedding_dim=_get_embedding_dim(cfg.embedder.model),
+            embedding_dim=_get_embedding_dim(cfg.embedder),
             use_sparse_embeddings=True,
             recreate_index=False,
         )
@@ -57,6 +58,7 @@ def _build_dense_pipeline(cfg: AppConfig, store: Any) -> Pipeline:
         FastembedTextEmbedder(
             model=cfg.embedder.model,
             cache_dir=cfg.embedder.cache_dir,
+            max_length=cfg.embedder.max_length,
         ),
     )
     pipeline.add_component("retriever", QdrantEmbeddingRetriever(document_store=store))
@@ -97,6 +99,7 @@ def _build_hybrid_pipeline(cfg: AppConfig, store: Any) -> Pipeline:
         FastembedTextEmbedder(
             model=cfg.embedder.model,
             cache_dir=cfg.embedder.cache_dir,
+            max_length=cfg.embedder.max_length,
         ),
     )
     pipeline.add_component(
