@@ -2,6 +2,12 @@
 
 Sistema RAG (Retrieval-Augmented Generation) basato su Haystack, Qdrant e Ollama (o OpenAI).
 
+<br>
+
+![ragtio_logo](https://github.com/ArchAI-Labs/ragtio/blob/main/ragtio_logo.png?raw=true)
+
+<br>
+
 ## Prerequisiti
 
 - [Docker](https://docs.docker.com/get-docker/) >= 24
