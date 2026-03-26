@@ -479,3 +479,13 @@ The backend exposes the following REST APIs at `http://localhost:8000`:
 | `POST` | `/api/eval/b` | Start a Mode B evaluation job with a custom dataset (asynchronous) |
 | `GET` | `/api/eval/{job_id}` | Check the status and result of an evaluation job |
 | `GET` | `/api/chunks` | List indexed chunks with ID and text preview (`?limit=`, `?offset=`, `?search=`) |
+
+---
+
+## License
+
+This project is licensed under the Apache-2.0 License - see the [LICENSE](https://github.com/ArchAI-Labs/ragtio/blob/main/LICENSE) file for details.
+
+---
+
+*Built with ❤️ by **[ArchAI Labs](https://github.com/ArchAI-Labs)***
