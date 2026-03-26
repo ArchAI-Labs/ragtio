@@ -285,17 +285,93 @@ def run_evaluation_mode_a(cfg: AppConfig) -> EvaluationReport:
     return report
 
 
-def run_evaluation_mode_b(dataset_path: str, cfg: AppConfig) -> EvaluationReport:
+def run_evaluation_mode_b(dataset: List[dict], cfg: AppConfig) -> EvaluationReport:
     """
-    Esegue la valutazione Mode B: K-Fold Cross-Validation su dataset annotato.
-    Calcola metriche IR e metriche di generazione (LLM-as-judge).
+    Esegue la valutazione Mode B: carica un dataset con domande e chunk attesi
+    e calcola le metriche IR senza generazione sintetica.
+
+    Il dataset è una lista di dict con i campi:
+        - query (str): la domanda o query da usare per il retrieval
+        - relevant_ids (List[str]): lista di ID dei chunk rilevanti attesi
+        - expected_text (str, opzionale): testo del chunk atteso (solo per display)
 
     Args:
-        dataset_path: Percorso al file JSONL del dataset di test.
+        dataset: Lista di campioni caricata dal JSON dell'utente.
         cfg: Configurazione applicativa.
 
     Returns:
-        EvaluationReport con metriche IR, metriche di generazione e statistiche
-        di varianza tra i fold.
+        EvaluationReport con metriche IR aggregate.
     """
-    raise NotImplementedError("Mode B non ancora implementato")
+    mode_cfg = cfg.evaluation.mode_b
+    k_values = mode_cfg.k_values
+    start = time.monotonic()
+    reranker_used = cfg.reranker is not None and cfg.reranker.enabled
+
+    logger.info(
+        "Avvio evaluation Mode B: %d campioni, k_values=%s, retrieval_mode=%s",
+        len(dataset), k_values, cfg.retrieval.mode,
+    )
+
+    per_sample: List[dict] = []
+
+    for item in dataset:
+        query = (item.get("query") or "").strip()
+        relevant_ids = [str(rid) for rid in (item.get("relevant_ids") or [])]
+
+        if not query or not relevant_ids:
+            logger.warning(
+                "Voce del dataset non valida (query o relevant_ids mancante), saltata: %s",
+                item,
+            )
+            continue
+
+        retrieved_docs = retrieve(query=query, cfg=cfg)
+        retrieved_ids = [str(d.id) for d in retrieved_docs if d.id]
+        retrieved_chunks = [
+            {"id": str(d.id), "content": d.content or ""}
+            for d in retrieved_docs if d.id
+        ]
+
+        sample_result: dict = {
+            "chunk_id": relevant_ids[0],
+            "relevant_ids": relevant_ids,
+            "chunk_text": item.get("expected_text", ""),
+            "query_type": "custom",
+            "query": query,
+            "retrieved_ids": retrieved_ids,
+            "retrieved_chunks": retrieved_chunks,
+            "mrr": reciprocal_rank(retrieved_ids, relevant_ids),
+        }
+        for k in k_values:
+            sample_result[f"recall@{k}"] = recall_at_k(retrieved_ids, relevant_ids, k)
+            sample_result[f"hit_rate@{k}"] = hit_rate_at_k(retrieved_ids, relevant_ids, k)
+            sample_result[f"ndcg@{k}"] = ndcg_at_k(retrieved_ids, relevant_ids, k)
+
+        per_sample.append(sample_result)
+
+    if not per_sample:
+        raise RuntimeError("Nessun campione valido nel dataset fornito")
+
+    ir_metrics = aggregate_ir_metrics(per_sample, k_values)
+    elapsed = time.monotonic() - start
+
+    report = EvaluationReport(
+        mode="B",
+        n_samples=len(per_sample),
+        ir_metrics=ir_metrics,
+        gen_metrics=None,
+        k_values=k_values,
+        retrieval_mode=cfg.retrieval.mode,
+        reranker_used=reranker_used,
+        elapsed_time_seconds=elapsed,
+        per_sample_results=per_sample,
+    )
+
+    _save_report(report, cfg.evaluation.output_dir)
+
+    logger.info(
+        "Evaluation Mode B completata in %.1f s. MRR=%.3f",
+        elapsed,
+        ir_metrics.mrr,
+    )
+    return report

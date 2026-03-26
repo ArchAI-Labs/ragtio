@@ -160,7 +160,7 @@ If you upload a file that is already in the index, you can choose between:
 
 ## Interface Guide
 
-The interface is divided into four tabs accessible from the top bar.
+The interface is divided into five tabs accessible from the top bar.
 The header shows in real time the connection status to Qdrant and Ollama, latency, active models, document count, and collection name.
 
 ---
@@ -201,6 +201,7 @@ This tab is used to query the indexed documents.
    - **Mode**: `Hybrid` (recommended), `Dense` (semantic embedding only), `Sparse` (BM25 keywords only)
    - **Top-K**: how many fragments to retrieve from the index (default: 10)
    - **Top-N after rerank**: how many fragments to pass to the model after reranking (default: 5)
+   - **Reranker**: checkbox to enable/disable the cross-encoder reranker on-the-fly (the setting is persisted in the runtime configuration)
 3. **Metadata filters** *(optional)* — restrict the search to documents with specific metadata.
    Example: field `category`, operator `=`, value `biology` → search only in biology documents.
    Available operators: `=`, `>=`, `<=`, `in`, `not`.
@@ -247,9 +248,26 @@ Click **Save Configuration** to apply changes or **Restore** to reload current v
 
 ### Tab 4 — Evaluation
 
-This tab measures retrieval quality automatically, without labeled datasets.
+> See below. After evaluation you can inspect chunk IDs in the **Chunks** tab (Tab 5).
 
-#### How It Works (Mode A)
+---
+
+### Tab 5 — Chunks
+
+Browse all chunks indexed in Qdrant. Useful for finding chunk IDs to include in a Mode B evaluation dataset.
+
+- **Filter by text** — type a keyword and press Enter (or click Search) to filter chunks by content
+- **Copy ID** — click the button next to any chunk to copy its ID to the clipboard
+- **Load more** — pagination with 50 chunks per page
+- **Source** — shows the origin file of each chunk
+
+---
+
+### Tab 4 — Evaluation
+
+This tab measures retrieval quality. Two modes are available: automatic (Mode A) and custom dataset (Mode B).
+
+#### Mode A — Synthetic Generation
 
 1. The system samples **random chunks** from the index
 2. For each chunk, it asks the LLM to generate a **synthetic query** whose type depends on the configured retrieval mode:
@@ -259,11 +277,48 @@ This tab measures retrieval quality automatically, without labeled datasets.
 3. It uses that query to perform retrieval and checks whether the original chunk is retrieved
 4. It aggregates the results into quality metrics
 
-**To start the evaluation:**
+**To start:**
 
 1. Make sure there are documents in the index (see Ingestion tab)
 2. Click **Start Evaluation Mode A**
 3. Wait for completion (may take a few minutes depending on the number of samples)
+
+---
+
+#### Mode B — Custom Dataset
+
+Lets you bring your own questions and expected chunk IDs. No LLM generation is involved — the system performs retrieval for each query and computes the same IR metrics.
+
+**To start:**
+
+1. Prepare a JSON file with the following format:
+
+```json
+[
+  {
+    "query": "What is machine learning?",
+    "relevant_ids": ["chunk-id-1"],
+    "expected_text": "optional display text"
+  },
+  {
+    "query": "How does RAG work?",
+    "relevant_ids": ["chunk-id-2", "chunk-id-3"]
+  }
+]
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `query` | yes | The question or search query to use for retrieval |
+| `relevant_ids` | yes | One or more IDs of the expected relevant chunks |
+| `expected_text` | no | Display-only text shown in the per-sample detail table |
+
+2. Click **Load JSON file** and select your file — the number of loaded samples is shown
+3. Click **Start Evaluation Mode B**
+
+> **Tip:** chunk IDs are the Qdrant document IDs visible in the per-sample table of a previous Mode A run.
+
+---
 
 #### Returned Metrics
 
@@ -282,7 +337,7 @@ Default K values are `[1, 3, 5, 10]`, configurable in `config.yaml`.
 - Low values suggest trying a different retrieval mode (Dense / Sparse / Hybrid in the Query tab) or chunking strategy
 - After each configuration change, re-run the evaluation to compare values
 
-Per-sample details (generated query, expected chunk, retrieved chunks) are visible in the table at the bottom of the page.
+Per-sample details (query, expected chunk, retrieved chunks with hit/miss indicators, and chunk text) are visible in the expandable table at the bottom of the page. Results can be exported as CSV.
 
 ---
 
@@ -420,5 +475,7 @@ The backend exposes the following REST APIs at `http://localhost:8000`:
 | `GET` | `/api/config` | Read current configuration |
 | `POST` | `/api/config` | Update configuration at runtime |
 | `DELETE` | `/api/index` | Delete all documents from the index (`?confirm=true`) |
-| `POST` | `/api/eval` | Start an evaluation job (asynchronous) |
+| `POST` | `/api/eval` | Start a Mode A evaluation job (asynchronous) |
+| `POST` | `/api/eval/b` | Start a Mode B evaluation job with a custom dataset (asynchronous) |
 | `GET` | `/api/eval/{job_id}` | Check the status and result of an evaluation job |
+| `GET` | `/api/chunks` | List indexed chunks with ID and text preview (`?limit=`, `?offset=`, `?search=`) |

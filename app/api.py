@@ -573,6 +573,66 @@ async def root():
     return FileResponse("static/index.html")
 
 
+# ── Chunks browser endpoint ────────────────────────────────────────────────────
+
+
+@app.get("/api/chunks")
+async def api_chunks(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: Optional[str] = Query(default=None, description="Qdrant scroll offset (opaque token)"),
+    search: Optional[str] = Query(default=None, description="Filtra per testo contenuto nel chunk"),
+):
+    """Restituisce un elenco paginato di chunk con ID e preview del testo."""
+    cfg = _get_cfg(request)
+
+    try:
+        from qdrant_client import QdrantClient
+        from qdrant_client.models import Filter, FieldCondition, MatchText
+
+        client = QdrantClient(
+            host=cfg.qdrant.host,
+            port=cfg.qdrant.port,
+            api_key=cfg.qdrant.api_key,
+            timeout=cfg.qdrant.timeout,
+        )
+
+        scroll_filter = None
+        if search:
+            scroll_filter = Filter(
+                must=[FieldCondition(key="content", match=MatchText(text=search))]
+            )
+
+        records, next_offset = client.scroll(
+            collection_name=cfg.qdrant.collection_name,
+            limit=limit,
+            offset=offset,
+            scroll_filter=scroll_filter,
+            with_payload=True,
+            with_vectors=False,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Errore Qdrant: {exc}")
+
+    chunks = []
+    for r in records:
+        payload = getattr(r, "payload", {}) or {}
+        doc_id = payload.get("id") or payload.get("_id") or str(r.id)
+        text = payload.get("content") or payload.get("text") or ""
+        source = payload.get("file_path") or payload.get("source") or ""
+        chunks.append({
+            "id": str(doc_id),
+            "preview": text[:200],
+            "source": source,
+        })
+
+    return {
+        "chunks": chunks,
+        "next_offset": str(next_offset) if next_offset is not None else None,
+        "count": len(chunks),
+    }
+
+
 # ── Evaluation endpoints ───────────────────────────────────────────────────────
 
 # In-memory job store: {job_id: {"status": str, "report": dict | None, "error": str | None}}
@@ -600,6 +660,39 @@ async def api_eval_start(request: Request):
     job_id = str(uuid.uuid4())
     _eval_jobs[job_id] = {"status": "running", "report": None, "error": None}
     asyncio.create_task(_run_eval_job(job_id, cfg))
+    return {"job_id": job_id}
+
+
+async def _run_eval_b_job(job_id: str, dataset: list, cfg: AppConfig) -> None:
+    from app.evaluation import run_evaluation_mode_b
+
+    try:
+        loop = asyncio.get_event_loop()
+        report = await loop.run_in_executor(None, run_evaluation_mode_b, dataset, cfg)
+        _eval_jobs[job_id]["status"] = "done"
+        _eval_jobs[job_id]["report"] = asdict(report)
+    except (RuntimeError, OSError, ValueError) as exc:
+        logger.exception("Evaluation Mode B job %s failed: %s", job_id, exc)
+        _eval_jobs[job_id]["status"] = "error"
+        _eval_jobs[job_id]["error"] = str(exc)
+
+
+@app.post("/api/eval/b")
+async def api_eval_b_start(request: Request):
+    """Avvia una evaluation Mode B con dataset JSON fornito dall'utente."""
+    cfg = _get_cfg(request)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=422, detail="Body JSON non valido")
+
+    dataset = body.get("dataset")
+    if not isinstance(dataset, list) or not dataset:
+        raise HTTPException(status_code=422, detail="Campo 'dataset' mancante o vuoto")
+
+    job_id = str(uuid.uuid4())
+    _eval_jobs[job_id] = {"status": "running", "report": None, "error": None}
+    asyncio.create_task(_run_eval_b_job(job_id, dataset, cfg))
     return {"job_id": job_id}
 
 

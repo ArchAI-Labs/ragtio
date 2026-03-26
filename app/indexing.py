@@ -36,17 +36,23 @@ def _register_custom_embedder(cfg: EmbedderConfig) -> None:
     from fastembed import TextEmbedding
     from fastembed.common.model_description import ModelSource, PoolingType
 
-    TextEmbedding.add_custom_model(
-        model=cfg.model,
-        pooling=PoolingType[cfg.custom.pooling],
-        normalization=cfg.custom.normalization,
-        sources=ModelSource(
-            hf=cfg.custom.hf_repo,
-            url=cfg.custom.url,
-        ),
-        dim=cfg.custom.dim,
-        model_file=cfg.custom.model_file,
-    )
+    try:
+        TextEmbedding.add_custom_model(
+            model=cfg.model,
+            pooling=PoolingType[cfg.custom.pooling],
+            normalization=cfg.custom.normalization,
+            sources=ModelSource(
+                hf=cfg.custom.hf_repo,
+                url=cfg.custom.url,
+            ),
+            dim=cfg.custom.dim,
+            model_file=cfg.custom.model_file,
+        )
+    except ValueError as e:
+        if "already registered" in str(e):
+            logger.debug("Modello %s già registrato in fastembed, skip registrazione custom.", cfg.model)
+            return
+        raise
     logger.debug(
         "Custom embedder registrato: model=%s dim=%d pooling=%s",
         cfg.model,

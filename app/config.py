@@ -176,18 +176,7 @@ class EvaluationModeAConfig(BaseModel):
 
 
 class EvaluationModeBConfig(BaseModel):
-    k_folds: int = Field(default=5, ge=2, le=20)
     k_values: List[int] = Field(default=[1, 3, 5, 10])
-    judge_prompt_faithfulness: str = (
-        "Valuta se la risposta è fedele al contesto fornito.\n"
-        "Contesto: {context}\nRisposta: {answer}\n"
-        'Rispondi in JSON: {"score": <0-1>, "reason": "<str>"}'
-    )
-    judge_prompt_relevance: str = (
-        "Valuta se la risposta risponde alla domanda.\n"
-        "Domanda: {question}\nRisposta: {answer}\n"
-        'Rispondi in JSON: {"score": <0-1>, "reason": "<str>"}'
-    )
 
     @field_validator("k_values")
     @classmethod

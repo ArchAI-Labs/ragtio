@@ -522,6 +522,29 @@
     .chunk-rank { font-size: 11px; color: var(--clr-muted); margin-bottom: 2px; }
     .toggle-icon { font-size: 10px; color: var(--clr-muted); margin-right: 4px; }
 
+    /* ── Chunks browser ──────────────────────────────────────── */
+    .chunks-table { width:100%; border-collapse:collapse; font-size:12px; }
+    .chunks-table th {
+      background: var(--clr-bg); padding: 5px 10px;
+      text-align: left; font-weight: 600;
+      border-bottom: 2px solid var(--clr-border); white-space: nowrap;
+    }
+    .chunks-table td {
+      padding: 5px 10px; border-bottom: 1px solid var(--clr-border);
+      vertical-align: middle;
+    }
+    .chunks-table tr:last-child td { border-bottom: none; }
+    .chunk-id-cell {
+      font-family: monospace; font-size: 11px; color: var(--clr-muted);
+      white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis;
+    }
+    .chunk-copy-btn {
+      background: none; border: 1px solid var(--clr-border); border-radius: 3px;
+      padding: 1px 6px; font-size: 10px; cursor: pointer; color: var(--clr-muted);
+      white-space: nowrap;
+    }
+    .chunk-copy-btn:hover { border-color: var(--clr-primary); color: var(--clr-primary); }
+
     /* ── Spinner ─────────────────────────────────────────────── */
     .spinner {
       display: inline-block;
@@ -580,6 +603,7 @@
   <button class="tab-btn"        role="tab" aria-selected="false" aria-controls="tab-query"   id="btn-query"  onclick="switchTab('query')">Query &amp; Answer</button>
   <button class="tab-btn"        role="tab" aria-selected="false" aria-controls="tab-config"  id="btn-config" onclick="switchTab('config')">Configuration</button>
   <button class="tab-btn"        role="tab" aria-selected="false" aria-controls="tab-eval"    id="btn-eval"   onclick="switchTab('eval')">Evaluation</button>
+  <button class="tab-btn"        role="tab" aria-selected="false" aria-controls="tab-chunks"  id="btn-chunks" onclick="switchTab('chunks')">Chunks</button>
 </nav>
 
 <main>
@@ -832,7 +856,7 @@
   <div class="card">
     <h3>LLM Model</h3>
     <div class="form-row">
-      <label for="cfg-model">Ollama Model</label>
+      <label for="cfg-model">LLM Model</label>
       <select id="cfg-model"><option>Loading…</option></select>
     </div>
     <div class="form-grid">
@@ -874,6 +898,7 @@ Answer:</textarea>
       <select id="cfg-embed-model" onchange="checkEmbedChange()">
         <option value="BAAI/bge-m3">BAAI/bge-m3</option>
         <option value="BAAI/bge-small-en-v1.5">BAAI/bge-small-en-v1.5</option>
+        <option value="intfloat/multilingual-e5-large">intfloat/multilingual-e5-large</option>
         <option value="sentence-transformers/all-MiniLM-L6-v2">all-MiniLM-L6-v2</option>
       </select>
       <div class="embed-warning" id="embed-warning" role="alert">
@@ -954,6 +979,43 @@ Question: {query}</textarea>
     <div id="eval-alert" class="alert" role="alert"></div>
   </div>
 
+  <!-- Mode B -->
+  <div class="card">
+    <h3>Mode B — IR Metrics (custom dataset)</h3>
+    <p style="font-size:13px;color:var(--clr-muted);margin-bottom:12px">
+      Load a JSON file with your own questions and expected chunk IDs. The system performs retrieval
+      for each query and computes MRR, Recall@K, Hit Rate@K, and NDCG@K — no LLM generation needed.
+    </p>
+    <p style="font-size:12px;color:var(--clr-muted);margin-bottom:8px">
+      Expected format:
+      <code style="display:block;background:var(--clr-surface);border:1px solid var(--clr-border);border-radius:4px;padding:8px;margin-top:4px;font-size:11px;white-space:pre">[
+  { "query": "What is machine learning?", "relevant_ids": ["chunk-id-1"], "expected_text": "optional display text" },
+  { "query": "How does RAG work?",         "relevant_ids": ["chunk-id-2", "chunk-id-3"] }
+]</code>
+    </p>
+
+    <div class="btn-row" style="margin-top:8px;gap:8px;flex-wrap:wrap">
+      <label class="btn btn-secondary" style="cursor:pointer;margin:0">
+        <input type="file" id="eval-b-file" accept=".json" style="display:none" onchange="loadEvalBFile(this)">
+        Load JSON file
+      </label>
+      <button type="button" class="btn btn-secondary" onclick="clearEvalBDataset()">Clear</button>
+      <button type="button" class="btn btn-primary" id="btn-eval-b" onclick="startEvalModeB()" disabled>
+        Start Evaluation Mode B
+      </button>
+    </div>
+
+    <div id="eval-b-file-info" style="font-size:12px;color:var(--clr-muted);margin-top:6px"></div>
+
+    <div id="eval-b-progress" style="display:none;margin-top:12px">
+      <div class="progress-wrap"><div class="progress-bar indeterminate"></div></div>
+      <p style="font-size:12px;color:var(--clr-muted);margin-top:6px">
+        Evaluation in progress…
+      </p>
+    </div>
+    <div id="eval-b-alert" class="alert" role="alert"></div>
+  </div>
+
   <!-- Results -->
   <div id="eval-results" style="display:none">
     <div class="card">
@@ -1008,6 +1070,51 @@ Question: {query}</textarea>
   </div>
 </section>
 
+
+<!-- ════════════════════════════════════════════════════════════
+     TAB 5 – CHUNKS
+════════════════════════════════════════════════════════════ -->
+<section class="tab-panel" id="tab-chunks" role="tabpanel" aria-labelledby="btn-chunks">
+  <h2>Chunks</h2>
+
+  <div class="card">
+    <p style="font-size:13px;color:var(--clr-muted);margin-bottom:12px">
+      Browse all chunks indexed in Qdrant. Use the IDs to build a custom evaluation dataset for Mode B.
+    </p>
+
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input type="text" id="chunks-search" placeholder="Filter by text…"
+        style="flex:1;min-width:200px;padding:6px 10px;border:1px solid var(--clr-border);border-radius:var(--radius);font-size:13px;background:var(--clr-surface);color:var(--clr-text)"
+        onkeydown="if(event.key==='Enter') loadChunks(true)">
+      <button type="button" class="btn btn-primary" onclick="loadChunks(true)" style="white-space:nowrap">Search</button>
+      <button type="button" class="btn btn-secondary" onclick="clearChunksSearch()" style="white-space:nowrap">Clear</button>
+    </div>
+    <div id="chunks-alert" class="alert" role="alert" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card" id="chunks-results-card" style="display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+      <span id="chunks-count-label" style="font-size:13px;color:var(--clr-muted)"></span>
+      <button type="button" class="btn btn-secondary" id="btn-chunks-more" onclick="loadChunks(false)"
+        style="font-size:12px;padding:5px 12px;display:none">Load more</button>
+    </div>
+    <div class="eval-table-wrap">
+      <table class="chunks-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th></th>
+            <th>Source</th>
+            <th>Preview</th>
+          </tr>
+        </thead>
+        <tbody id="chunks-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+
 </main>
 
 <script>
@@ -1045,6 +1152,7 @@ function switchTab(name) {
   btn.setAttribute('aria-selected', 'true');
 
   if (name === 'config') loadConfig();
+  if (name === 'chunks') loadChunks(true);
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -1473,28 +1581,37 @@ async function loadConfig() {
     if (!res.ok) return;
     const data = await res.json();
 
-    if (data.model)         {
-      // Prova a impostare il valore nel select; se non c'è l'opzione, aggiungila
+    const llm     = data.llm     || {};
+    const embedder = data.embedder || {};
+    const qe      = data.query_enhancement || {};
+
+    if (llm.model) {
       const sel = document.getElementById('cfg-model');
-      if (![...sel.options].some(o => o.value === data.model)) {
-        sel.insertAdjacentHTML('beforeend', `<option value="${data.model}">${data.model}</option>`);
+      if (![...sel.options].some(o => o.value === llm.model)) {
+        sel.insertAdjacentHTML('beforeend', `<option value="${llm.model}">${llm.model}</option>`);
       }
-      sel.value = data.model;
+      sel.value = llm.model;
     }
-    if (data.temperature  != null) document.getElementById('cfg-temp').value        = data.temperature;
-    if (data.top_p        != null) document.getElementById('cfg-top-p').value       = data.top_p;
-    if (data.max_tokens   != null) document.getElementById('cfg-max-tokens').value  = data.max_tokens;
-    if (data.system_prompt)        document.getElementById('cfg-system-prompt').value = data.system_prompt;
-    if (data.rag_template)         document.getElementById('cfg-rag-template').value  = data.rag_template;
-    if (data.embed_model) {
-      document.getElementById('cfg-embed-model').value = data.embed_model;
-      savedEmbedModel = data.embed_model;
-      originalEmbedModel = data.embed_model;
+    if (llm.temperature  != null) document.getElementById('cfg-temp').value         = llm.temperature;
+    if (llm.top_p        != null) document.getElementById('cfg-top-p').value        = llm.top_p;
+    if (llm.max_tokens   != null) document.getElementById('cfg-max-tokens').value   = llm.max_tokens;
+    if (llm.system_prompt)        document.getElementById('cfg-system-prompt').value = llm.system_prompt;
+    if (llm.rag_prompt_template)  document.getElementById('cfg-rag-template').value  = llm.rag_prompt_template;
+
+    if (embedder.model) {
+      const embSel = document.getElementById('cfg-embed-model');
+      if (![...embSel.options].some(o => o.value === embedder.model)) {
+        embSel.insertAdjacentHTML('beforeend', `<option value="${embedder.model}">${embedder.model}</option>`);
+      }
+      embSel.value = embedder.model;
+      savedEmbedModel = embedder.model;
+      originalEmbedModel = embedder.model;
     }
-    if (data.batch_size   != null) document.getElementById('cfg-batch-size').value  = data.batch_size;
-    if (data.max_length   != null) document.getElementById('cfg-max-len').value     = data.max_length;
-    if (data.expansion_prompt)     document.getElementById('cfg-expansion-prompt').value = data.expansion_prompt;
-    if (data.decomp_prompt)        document.getElementById('cfg-decomp-prompt').value    = data.decomp_prompt;
+    if (embedder.batch_size != null) document.getElementById('cfg-batch-size').value = embedder.batch_size;
+    if (embedder.max_length != null) document.getElementById('cfg-max-len').value    = embedder.max_length;
+
+    if (qe.expansion?.prompt_template)    document.getElementById('cfg-expansion-prompt').value = qe.expansion.prompt_template;
+    if (qe.decomposition?.prompt_template) document.getElementById('cfg-decomp-prompt').value   = qe.decomposition.prompt_template;
   } catch { /* silently fail */ }
 }
 
@@ -1505,17 +1622,23 @@ async function saveConfig() {
   hideAlert('cfg-result');
 
   const payload = {
-    model:              document.getElementById('cfg-model').value,
-    temperature:        +document.getElementById('cfg-temp').value,
-    top_p:              +document.getElementById('cfg-top-p').value,
-    max_tokens:         +document.getElementById('cfg-max-tokens').value,
-    system_prompt:      document.getElementById('cfg-system-prompt').value,
-    rag_template:       document.getElementById('cfg-rag-template').value,
-    embed_model:        document.getElementById('cfg-embed-model').value,
-    batch_size:         +document.getElementById('cfg-batch-size').value,
-    max_length:         +document.getElementById('cfg-max-len').value,
-    expansion_prompt:   document.getElementById('cfg-expansion-prompt').value,
-    decomp_prompt:      document.getElementById('cfg-decomp-prompt').value
+    llm: {
+      model:              document.getElementById('cfg-model').value,
+      temperature:        +document.getElementById('cfg-temp').value,
+      top_p:              +document.getElementById('cfg-top-p').value,
+      max_tokens:         +document.getElementById('cfg-max-tokens').value,
+      system_prompt:      document.getElementById('cfg-system-prompt').value,
+      rag_prompt_template: document.getElementById('cfg-rag-template').value,
+    },
+    embedder: {
+      model:      document.getElementById('cfg-embed-model').value,
+      batch_size: +document.getElementById('cfg-batch-size').value,
+      max_length: +document.getElementById('cfg-max-len').value,
+    },
+    query_enhancement: {
+      expansion:    { prompt_template: document.getElementById('cfg-expansion-prompt').value },
+      decomposition: { prompt_template: document.getElementById('cfg-decomp-prompt').value },
+    },
   };
 
   try {
@@ -1527,7 +1650,7 @@ async function saveConfig() {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || 'Server error');
 
-    savedEmbedModel = payload.embed_model;
+    savedEmbedModel = payload.embedder.model;
     document.getElementById('embed-warning').classList.remove('show');
 
     const now = new Date().toLocaleTimeString('en-US');
@@ -1545,6 +1668,9 @@ async function saveConfig() {
 ════════════════════════════════════════════════════════════════ */
 let _evalJobId = null;
 let _evalPollTimer = null;
+let _evalBDataset = null;
+let _evalBJobId = null;
+let _evalBPollTimer = null;
 
 function _scoreClass(v) {
   if (v >= 0.7) return 'score-high';
@@ -1608,6 +1734,95 @@ async function _pollEvalJob() {
   } catch { /* retry al prossimo tick */ }
 }
 
+// ── Mode B ────────────────────────────────────────────────────────────────────
+
+function loadEvalBFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const parsed = JSON.parse(e.target.result);
+      if (!Array.isArray(parsed) || parsed.length === 0)
+        throw new Error("The JSON must be a non-empty array");
+      _evalBDataset = parsed;
+      document.getElementById('eval-b-file-info').textContent =
+        `✓ Loaded ${parsed.length} sample(s) from "${file.name}"`;
+      document.getElementById('btn-eval-b').disabled = false;
+      hideAlert('eval-b-alert');
+    } catch (err) {
+      _evalBDataset = null;
+      document.getElementById('btn-eval-b').disabled = true;
+      document.getElementById('eval-b-file-info').textContent = '';
+      showAlert('eval-b-alert', '✗ Invalid JSON: ' + err.message, 'error');
+    }
+  };
+  reader.readAsText(file);
+}
+
+function clearEvalBDataset() {
+  _evalBDataset = null;
+  document.getElementById('eval-b-file').value = '';
+  document.getElementById('eval-b-file-info').textContent = '';
+  document.getElementById('btn-eval-b').disabled = true;
+  hideAlert('eval-b-alert');
+}
+
+async function startEvalModeB() {
+  if (!_evalBDataset) return;
+  const btn = document.getElementById('btn-eval-b');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Starting…';
+  document.getElementById('eval-results').style.display = 'none';
+  document.getElementById('eval-b-progress').style.display = 'none';
+  hideAlert('eval-b-alert');
+
+  try {
+    const res = await fetch('/api/eval/b', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dataset: _evalBDataset }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Server error');
+    _evalBJobId = data.job_id;
+    document.getElementById('eval-b-progress').style.display = 'block';
+    showAlert('eval-b-alert', 'Job started — waiting for results…', 'info');
+    btn.innerHTML = '<span class="spinner"></span> Running…';
+    _evalBPollTimer = setInterval(_pollEvalBJob, 3000);
+  } catch (err) {
+    showAlert('eval-b-alert', '✗ ' + err.message, 'error');
+    btn.disabled = false;
+    btn.textContent = 'Start Evaluation Mode B';
+  }
+}
+
+async function _pollEvalBJob() {
+  if (!_evalBJobId) return;
+  try {
+    const res = await fetch('/api/eval/' + _evalBJobId);
+    const data = await res.json();
+    if (data.status === 'done') {
+      clearInterval(_evalBPollTimer);
+      document.getElementById('eval-b-progress').style.display = 'none';
+      hideAlert('eval-b-alert');
+      _renderEvalReport(data.report);
+      const btn = document.getElementById('btn-eval-b');
+      btn.disabled = false;
+      btn.textContent = 'Start Evaluation Mode B';
+    } else if (data.status === 'error') {
+      clearInterval(_evalBPollTimer);
+      document.getElementById('eval-b-progress').style.display = 'none';
+      showAlert('eval-b-alert', '✗ ' + (data.error || 'Unknown error'), 'error');
+      const btn = document.getElementById('btn-eval-b');
+      btn.disabled = false;
+      btn.textContent = 'Start Evaluation Mode B';
+    }
+  } catch { /* retry al prossimo tick */ }
+}
+
+// ── Shared render ─────────────────────────────────────────────────────────────
+
 let _lastEvalReport = null;
 
 function _esc(s) {
@@ -1669,9 +1884,13 @@ function _renderEvalReport(report) {
       // Detail row: expected chunk + retrieved chunks
       const expectedText = s.chunk_text || '(no content)';
       const retrievedChunks = s.retrieved_chunks || [];
-      const expectedId = s.chunk_id || '';
+      const relevantIds = s.relevant_ids || (s.chunk_id ? [s.chunk_id] : []);
+      const relevantIdSet = new Set(relevantIds);
+      const expectedLabel = relevantIds.length > 1
+        ? `Expected chunks (IDs: ${relevantIds.map(_esc).join(', ')})`
+        : `Expected chunk (ID: ${_esc(relevantIds[0] || '')})`;
       const retrievedHtml = retrievedChunks.map((rc, ri) => {
-        const isHit = rc.id === expectedId;
+        const isHit = relevantIdSet.has(rc.id);
         const cls = isHit ? 'chunk-hit' : 'chunk-miss';
         const badge = isHit ? ' <b style="color:var(--clr-ok)">&#10003; HIT</b>' : '';
         return `<div class="chunk-item detail-text ${cls}">
@@ -1686,7 +1905,7 @@ function _renderEvalReport(report) {
           <div class="detail-text">${_esc(q)}</div>
         </div>
         <div class="detail-section">
-          <div class="detail-label">Expected chunk (ID: ${_esc(expectedId)})</div>
+          <div class="detail-label">${expectedLabel}</div>
           <div class="detail-text">${_esc(expectedText)}</div>
         </div>
         <div class="detail-section">
@@ -1747,6 +1966,73 @@ function downloadEvalCsv() {
   a.download = 'eval_results.csv';
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// ── Tab: Chunks ───────────────────────────────────────────────────────────────
+
+let _chunksNextOffset = null;
+let _chunksTotalLoaded = 0;
+
+async function loadChunks(reset) {
+  if (reset) {
+    _chunksNextOffset = null;
+    _chunksTotalLoaded = 0;
+    document.getElementById('chunks-table-body').innerHTML = '';
+  }
+
+  const search = document.getElementById('chunks-search').value.trim();
+  const params = new URLSearchParams({ limit: 50 });
+  if (search) params.set('search', search);
+  if (_chunksNextOffset) params.set('offset', _chunksNextOffset);
+
+  hideAlert('chunks-alert');
+
+  try {
+    const res = await fetch('/api/chunks?' + params);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Server error');
+
+    _chunksNextOffset = data.next_offset || null;
+    _chunksTotalLoaded += data.chunks.length;
+
+    const tbody = document.getElementById('chunks-table-body');
+    tbody.innerHTML += data.chunks.map(c => `
+      <tr>
+        <td class="chunk-id-cell" title="${_esc(c.id)}">${_esc(c.id)}</td>
+        <td style="white-space:nowrap">
+          <button class="chunk-copy-btn" onclick="copyChunkId(this, '${_esc(c.id)}')">Copy ID</button>
+        </td>
+        <td style="font-size:11px;color:var(--clr-muted);white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="${_esc(c.source)}">${_esc(c.source || '—')}</td>
+        <td style="font-size:12px;color:var(--clr-text);max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_esc(c.preview)}">${_esc(c.preview)}</td>
+      </tr>`).join('');
+
+    document.getElementById('chunks-count-label').textContent =
+      `${_chunksTotalLoaded} chunk${_chunksTotalLoaded !== 1 ? 's' : ''} loaded`;
+    document.getElementById('btn-chunks-more').style.display =
+      _chunksNextOffset ? 'inline-flex' : 'none';
+    document.getElementById('chunks-results-card').style.display = 'block';
+  } catch (err) {
+    showAlert('chunks-alert', '✗ ' + err.message, 'error');
+  }
+}
+
+function clearChunksSearch() {
+  document.getElementById('chunks-search').value = '';
+  loadChunks(true);
+}
+
+function copyChunkId(btn, id) {
+  navigator.clipboard.writeText(id).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    btn.style.color = 'var(--clr-ok)';
+    btn.style.borderColor = 'var(--clr-ok)';
+    setTimeout(() => {
+      btn.textContent = orig;
+      btn.style.color = '';
+      btn.style.borderColor = '';
+    }, 1500);
+  });
 }
 </script>
 </body>
