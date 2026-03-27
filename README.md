@@ -13,6 +13,10 @@ RAG (Retrieval-Augmented Generation) system built on Haystack, Qdrant, and Ollam
 - [Docker](https://docs.docker.com/get-docker/) >= 24
 - [Docker Compose](https://docs.docker.com/compose/install/) >= 2.20 (included in Docker Desktop)
 
+or alternatively:
+
+- [Rancher](https://rancherdesktop.io/)
+
 ## Getting Started
 
 ```bash
