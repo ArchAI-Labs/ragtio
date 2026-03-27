@@ -23,7 +23,7 @@ or alternatively:
 docker compose up -d
 ```
 
-On first startup, the `ollama-init` service automatically downloads the `mistral` model.
+On first startup, the `ollama-init` service automatically downloads the `qwen3:4b` model.
 The download may take a few minutes depending on your connection speed.
 
 ## Web Interface
