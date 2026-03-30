@@ -220,8 +220,10 @@ def apply_env_overrides(raw: dict) -> dict:
         raw.setdefault("llm", {})["model"] = ollama_model
     if openai_api_key := os.getenv("OPENAI_API_KEY"):
         raw.setdefault("llm", {})["openai_api_key"] = openai_api_key
-    if openai_model := os.getenv("OPENAI_MODEL"):
-        raw.setdefault("llm", {})["model"] = openai_model
+    effective_provider = raw.get("llm", {}).get("provider", "ollama")
+    if effective_provider == "openai":
+        if openai_model := os.getenv("OPENAI_MODEL"):
+            raw.setdefault("llm", {})["model"] = openai_model
     if openai_base_url := os.getenv("OPENAI_BASE_URL"):
         raw.setdefault("llm", {})["openai_base_url"] = openai_base_url
     if embedder_model := os.getenv("EMBEDDER_MODEL"):
