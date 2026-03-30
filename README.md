@@ -13,13 +13,17 @@ RAG (Retrieval-Augmented Generation) system built on Haystack, Qdrant, and Ollam
 - [Docker](https://docs.docker.com/get-docker/) >= 24
 - [Docker Compose](https://docs.docker.com/compose/install/) >= 2.20 (included in Docker Desktop)
 
+or alternatively:
+
+- [Rancher](https://rancherdesktop.io/)
+
 ## Getting Started
 
 ```bash
 docker compose up -d
 ```
 
-On first startup, the `ollama-init` service automatically downloads the `mistral` model.
+On first startup, the `ollama-init` service automatically downloads the `qwen3:4b` model.
 The download may take a few minutes depending on your connection speed.
 
 ## Web Interface
