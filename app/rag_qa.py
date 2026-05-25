@@ -1,6 +1,7 @@
 # Pipeline RAG Q&A
 import json
 import logging
+import re
 import time
 from typing import AsyncGenerator, List, Optional
 
@@ -123,6 +124,13 @@ def _collect_docs(query: str, enhanced_queries: List[str], cfg: AppConfig, filte
     return _deduplicate(all_docs)
 
 
+_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+
+def _strip_thinking(text: str) -> str:
+    return _THINK_RE.sub("", text).lstrip()
+
+
 # ── LLM call helpers ───────────────────────────────────────────────────────────
 
 def _build_messages(context: str, question: str, cfg: AppConfig) -> list:
@@ -151,7 +159,7 @@ async def _call_ollama(context: str, question: str, cfg: AppConfig) -> str:
     async with httpx.AsyncClient(timeout=cfg.llm.timeout) as client:
         response = await client.post(f"{cfg.llm.host}/api/chat", json=payload)
         response.raise_for_status()
-        return response.json()["message"]["content"]
+        return _strip_thinking(response.json()["message"]["content"])
 
 
 async def _call_openai(context: str, question: str, cfg: AppConfig) -> str:
@@ -187,13 +195,29 @@ async def _stream_ollama(context: str, question: str, cfg: AppConfig) -> AsyncGe
     async with httpx.AsyncClient(timeout=cfg.llm.timeout) as client:
         async with client.stream("POST", f"{cfg.llm.host}/api/chat", json=payload) as resp:
             resp.raise_for_status()
+            pending = ""
+            past_think = False
             async for line in resp.aiter_lines():
-                if line:
-                    data = json.loads(line)
-                    if token := data.get("message", {}).get("content"):
+                if not line:
+                    continue
+                data = json.loads(line)
+                token = data.get("message", {}).get("content", "")
+                if token:
+                    if past_think:
                         yield token
-                    if data.get("done"):
-                        break
+                    else:
+                        pending += token
+                        end_idx = pending.find("</think>")
+                        if end_idx != -1:
+                            after = pending[end_idx + len("</think>"):].lstrip("\n")
+                            pending = ""
+                            past_think = True
+                            if after:
+                                yield after
+                if data.get("done"):
+                    if pending:
+                        yield pending
+                    break
 
 
 async def _stream_openai(context: str, question: str, cfg: AppConfig) -> AsyncGenerator[str, None]:
