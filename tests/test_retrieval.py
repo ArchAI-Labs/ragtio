@@ -83,7 +83,7 @@ def mock_store():
 
 
 # ---------------------------------------------------------------------------
-# Routing: ogni mode usa il builder corretto
+# Routing: each mode uses the correct builder
 # ---------------------------------------------------------------------------
 
 
@@ -205,7 +205,7 @@ class TestPipelineParameters:
 
 
 # ---------------------------------------------------------------------------
-# Lazy init: il pipeline viene costruito una sola volta
+# Lazy init: the pipeline is built only once
 # ---------------------------------------------------------------------------
 
 
@@ -341,7 +341,7 @@ class TestReranking:
 
 
 # ---------------------------------------------------------------------------
-# _rerank unit test (con TransformersSimilarityRanker mockato)
+# _rerank unit test (with TransformersSimilarityRanker mocked)
 # ---------------------------------------------------------------------------
 
 
@@ -380,7 +380,7 @@ class TestRerankFunction:
             _rerank("q1", docs, 3, cfg)
             _rerank("q2", docs, 3, cfg)
 
-        # Costruttore chiamato una sola volta (caching)
+        # Constructor called only once (caching)
         MockClass.assert_called_once()
         mock_ranker.warm_up.assert_called_once()
         assert mock_ranker.run.call_count == 2
@@ -410,6 +410,6 @@ class TestImportPatchability:
         import importlib
 
         mod = importlib.import_module("app.retrieval")
-        # Verifica che il nome esista a livello di modulo (via lazy import nel codice di _get_reranker)
-        # Il test è sufficiente se la patch funziona come dimostrato in TestRerankFunction
+        # Verify the name exists at module level (via lazy import in _get_reranker)
+        # The test is sufficient if patching works as demonstrated in TestRerankFunction
         assert hasattr(mod, "_get_reranker")

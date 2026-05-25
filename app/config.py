@@ -20,7 +20,7 @@ class QdrantConfig(BaseModel):
 
 
 class CustomEmbedderConfig(BaseModel):
-    """Parametri per registrare un modello ONNX custom via TextEmbedding.add_custom_model()."""
+    """Parameters for registering a custom ONNX model via TextEmbedding.add_custom_model()."""
 
     pooling: Literal["MEAN", "CLS", "MAX"] = "MEAN"
     normalization: bool = True
@@ -41,8 +41,8 @@ class EmbedderConfig(BaseModel):
     batch_size: int = Field(default=32, ge=1)
     max_length: int = Field(default=512, ge=64, le=8192)
     cache_dir: str = "/app/models/fastembed"
-    embedding_dim: Optional[int] = Field(default=None, ge=1)  # override manuale dimensione vettore
-    custom: Optional[CustomEmbedderConfig] = None             # presente solo per modelli custom ONNX
+    embedding_dim: Optional[int] = Field(default=None, ge=1)  # manual override for the embedding vector dimension
+    custom: Optional[CustomEmbedderConfig] = None             # only present for custom ONNX models
 
 
 class ChunkingConfig(BaseModel):
@@ -77,23 +77,23 @@ class LLMConfig(BaseModel):
     provider: Literal["ollama", "openai"] = "ollama"
     # Ollama
     host: str = "http://ollama:11434"
+    think: bool = False  # Ollama only: disable thinking/reasoning mode (e.g. qwen3)
     # OpenAI
     openai_api_key: Optional[str] = None
-    openai_base_url: Optional[str] = None  # es. per Azure o proxy compatibili
+    openai_base_url: Optional[str] = None  # e.g. for Azure or compatible proxies
     # Comune
     model: str = "mistral"
     temperature: float = Field(default=0.1, ge=0.0, le=2.0)
     top_p: float = Field(default=0.9, ge=0.0, le=1.0)
-    max_tokens: int = Field(default=1024, ge=1)
+    max_tokens: int = Field(default=2048, ge=-1)  # -1 = unlimited (Ollama only)
     timeout: int = Field(default=120, ge=1)
     stream: bool = True
     system_prompt: str = (
-        "Sei un assistente esperto e preciso. Rispondi alle domande basandoti "
-        "esclusivamente sul contesto fornito. Se l'informazione non è presente "
-        "nel contesto, dillo esplicitamente senza inventare. Rispondi nella "
-        "stessa lingua della domanda."
+        "You are an expert and precise assistant. Answer questions based exclusively "
+        "on the provided context. If the information is not in the context, say so "
+        "explicitly. Always reply in the same language as the question."
     )
-    rag_prompt_template: str = "Contesto:\n{context}\n\nDomanda: {question}\n\nRisposta:"
+    rag_prompt_template: str = "Context:\n{context}\n\nQuestion: {question}\n\nAnswer:"
     max_context_length: int = Field(default=4000, ge=1)
 
 
@@ -152,9 +152,9 @@ class LoggingConfig(BaseModel):
 class EvaluationModeAConfig(BaseModel):
     n_samples: int = Field(default=50, ge=1)
     k_values: List[int] = Field(default=[1, 3, 5, 10])
-    # "question" = sempre domanda sintetica (ottimale per Dense/Hybrid)
-    # "keywords" = sempre lista di keyword (ottimale per Sparse/BM25)
-    # "auto"     = domanda per dense/hybrid, keyword per sparse
+    # "question" = always a synthetic question (optimal for Dense/Hybrid)
+    # "keywords" = always a keyword list (optimal for Sparse/BM25)
+    # "auto"     = question for dense/hybrid, keywords for sparse
     query_type: Literal["question", "keywords", "auto"] = "auto"
     question_gen_prompt: str = (
         "Leggi il seguente testo e formula una domanda a cui il testo risponde direttamente.\n"
@@ -207,7 +207,7 @@ class AppConfig(BaseModel):
 
 
 def apply_env_overrides(raw: dict) -> dict:
-    """Sovrascrive i valori del dizionario YAML con le variabili d'ambiente."""
+    """Overrides YAML dictionary values with environment variables."""
     if host := os.getenv("QDRANT_HOST"):
         raw.setdefault("qdrant", {})["host"] = host
     if port := os.getenv("QDRANT_PORT"):
@@ -260,11 +260,11 @@ def apply_env_overrides(raw: dict) -> dict:
 
 def load_config(path: str = "config.yaml") -> AppConfig:
     """
-    Carica e valida il file di configurazione YAML applicando gli override da env.
+    Loads and validates the YAML configuration file, applying env variable overrides.
 
     Raises:
-        FileNotFoundError: se il file non esiste
-        ValueError: se il YAML non rispetta lo schema Pydantic
+        FileNotFoundError: if the file does not exist
+        ValueError: if the YAML does not conform to the Pydantic schema
     """
     config_path = Path(path)
     if not config_path.exists():
@@ -285,7 +285,7 @@ _config: Optional[AppConfig] = None
 
 
 def get_config() -> AppConfig:
-    """Restituisce l'istanza singleton della configurazione, caricata una sola volta."""
+    """Returns the singleton configuration instance, loaded only once."""
     global _config
     if _config is None:
         config_path = os.getenv("CONFIG_PATH", "config.yaml")

@@ -57,16 +57,16 @@ def test_load_minimal_config(tmp_path):
     assert cfg.llm.model == "mistral"
     assert cfg.retrieval.mode == "hybrid"
     assert cfg.retrieval.top_k == 5
-    # sezioni opzionali assenti → None
+    # optional sections absent → None
     assert cfg.query_enhancement is None
     assert cfg.reranker is None
-    # sezioni con default
+    # sections with defaults
     assert cfg.indexing.chunking.strategy == "recursive"
     assert cfg.logging.level == "INFO"
 
 
 # ---------------------------------------------------------------------------
-# Test 2: validazione fallisce se chunk_overlap >= chunk_size
+# Test 2: validation fails if chunk_overlap >= chunk_size
 # ---------------------------------------------------------------------------
 
 
@@ -89,7 +89,7 @@ def test_chunking_valid_overlap(strategy):
 
 
 def test_chunking_paragraph_ignores_overlap_validation():
-    # paragraph non richiede chunk_overlap < chunk_size
+    # paragraph strategy does not require chunk_overlap < chunk_size
     cfg = ChunkingConfig(strategy="paragraph", max_paragraph_length=3000)
     assert cfg.strategy == "paragraph"
 
@@ -348,7 +348,7 @@ def test_env_override_custom_embedder_url(tmp_path, monkeypatch):
 
 
 def test_custom_embedder_not_activated_without_dim(tmp_path, monkeypatch):
-    # senza EMBEDDER_CUSTOM_DIM il blocco custom non viene attivato
+    # without EMBEDDER_CUSTOM_DIM the custom block is not activated
     monkeypatch.setenv("EMBEDDER_CUSTOM_HF_REPO", "org/model")
     cfg_path = write_yaml(tmp_path, MINIMAL_YAML)
     cfg = load_config(str(cfg_path))

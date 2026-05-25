@@ -34,14 +34,17 @@ indexing:
 llm:
   provider: "ollama"          # "ollama" oppure "openai"
   host: "http://ollama:11434" # usato solo se provider=ollama
+  think: false                # false = disabilita thinking mode (qwen3 e modelli reasoning)
   # openai_api_key: ""        # oppure usa la variabile d'ambiente OPENAI_API_KEY
   # openai_base_url: null     # lascia null per le API ufficiali OpenAI
   model: "qwen3:4b"           # es. "gpt-4o-mini" per OpenAI "qwen3:4b"
   temperature: 0.1
   top_p: 0.9
-  max_tokens: 1024
+  max_tokens: -1                  # -1 = illimitato (Ollama); per OpenAI usa es. 4096
   timeout: 120
   stream: true
+  system_prompt: "You are an expert and precise assistant. Answer questions based exclusively on the provided context. If the information is not in the context, say so explicitly. Always reply in the same language as the user's question."
+  rag_prompt_template: "Context:\n{context}\n\nQuestion: {question}\n\nAnswer in the same language as the question above:"
 
 retrieval:
   mode: "hybrid"
@@ -54,16 +57,16 @@ query_enhancement:
     enabled: false
     n_variants: 3
     prompt_template: |
-      Genera {n} varianti semanticamente equivalenti della seguente query.
-      Restituisci solo le varianti, una per riga, senza numerazione.
+      Generate {n} semantically equivalent variants of the following query.
+      Return only the variants, one per line, without numbering.
       Query: {query}
   decomposition:
     enabled: false
     n_subqueries: 3
     prompt_template: |
-      Scomponi la seguente domanda complessa in {n} sotto-domande semplici e indipendenti.
-      Restituisci solo le sotto-domande, una per riga, senza numerazione.
-      Domanda: {query}
+      Decompose the following complex question into {n} simple and independent sub-questions.
+      Return only the sub-questions, one per line, without numbering.
+      Question: {query}
 
 reranker:
   enabled: false
@@ -95,26 +98,26 @@ evaluation:
     # "auto"     = domanda per dense/hybrid, keyword per sparse
     query_type: "auto"
     question_gen_prompt: |
-      Leggi il seguente testo e formula una domanda a cui il testo risponde direttamente.
-      Restituisci solo la domanda, senza altro testo.
-      Testo: {chunk}
+      Read the following text and formulate a question that the text directly answers.
+      Return only the question, without any other text.
+      Text: {chunk}
     keyword_gen_prompt: |
-      Leggi il seguente testo ed estrai da 3 a 6 keyword o brevi frasi chiave che lo rappresentano.
-      Restituisci solo le keyword separate da virgola, senza altro testo.
-      Testo: {chunk}
+      Read the following text and extract 3 to 6 keywords or short key phrases that represent it.
+      Return only the keywords separated by commas, without any other text.
+      Text: {chunk}
   mode_b:
     k_folds: 5
     k_values: [1, 3, 5, 10]
     judge_prompt_faithfulness: |
-      Sei un giudice imparziale. Valuta se la risposta è fedele al contesto fornito.
-      Contesto: {context}
-      Risposta: {answer}
-      Rispondi con un punteggio da 0 a 1 e una breve motivazione in JSON:
+      You are an impartial judge. Evaluate whether the answer is faithful to the provided context.
+      Context: {context}
+      Answer: {answer}
+      Reply with a score from 0 to 1 and a brief justification in JSON:
       {"score": <float>, "reason": "<str>"}
     judge_prompt_relevance: |
-      Sei un giudice imparziale. Valuta se la risposta risponde alla domanda.
-      Domanda: {question}
-      Risposta: {answer}
-      Rispondi con un punteggio da 0 a 1 e una breve motivazione in JSON:
+      You are an impartial judge. Evaluate whether the answer addresses the question.
+      Question: {question}
+      Answer: {answer}
+      Reply with a score from 0 to 1 and a brief justification in JSON:
       {"score": <float>, "reason": "<str>"}
   output_dir: "/app/eval_reports"

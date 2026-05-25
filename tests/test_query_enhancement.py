@@ -263,7 +263,7 @@ class TestEnhanceQueryBoth:
         def mock_call_ollama(prompt, llm_cfg):
             call_count["n"] += 1
             if call_count["n"] == 1:
-                # Decomposition viene chiamata prima
+                # Decomposition is called first
                 return "sub 1\nsub 2"
             return "exp 1\nexp 2"
 
@@ -342,7 +342,7 @@ class TestCallOllamaWithMockTransport:
             lambda req: httpx.Response(200, content=response_body)
         )
 
-        # Monkeypatcha httpx.Client per usare il MockTransport
+        # Monkeypatch httpx.Client to use MockTransport
         original_client = httpx.Client
 
         class MockClient(httpx.Client):

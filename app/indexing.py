@@ -189,8 +189,8 @@ def _get_splitter(cfg: AppConfig):
     chunk_overlap = cfg.indexing.chunking.chunk_overlap
 
     if strategy == "character":
-        # DocumentSplitter non supporta split_by="character"; si usa il splitter ricorsivo
-        # con separatori vuoti per ottenere un taglio a carattere puro
+        # DocumentSplitter does not support split_by="character"; use the recursive splitter
+        # with empty separators to achieve a pure character-level split
         return RecursiveDocumentSplitter(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
@@ -218,16 +218,16 @@ def build_index(
     embedder: Optional[Any] = None,
 ) -> IndexingResult:
     """
-    Esegue la pipeline di indicizzazione su una lista di Document Haystack.
+    Runs the indexing pipeline on a list of Haystack Documents.
 
     Args:
-        documents: Lista di Document prodotti dal modulo di ingestione.
-        cfg: Configurazione applicativa completa.
-        document_store: DocumentStore opzionale (per test con in-memory Qdrant).
-        embedder: Embedder opzionale (per test senza modelli reali).
+        documents: List of Documents produced by the ingestion module.
+        cfg: Full application configuration.
+        document_store: Optional DocumentStore (for tests with in-memory Qdrant).
+        embedder: Optional Embedder (for tests without real models).
 
     Returns:
-        IndexingResult con statistiche sull'operazione.
+        IndexingResult with operation statistics.
     """
     from haystack.components.writers import DocumentWriter
     from haystack.document_stores.types import DuplicatePolicy
@@ -242,7 +242,7 @@ def build_index(
 
     logger.info("Avvio build_index: %d documenti da indicizzare", n_ingested)
 
-    # Crea document store se non fornito
+    # Create document store if not provided
     if document_store is None:
         embedding_dim = _get_embedding_dim(cfg.embedder)
         document_store = QdrantDocumentStore(
@@ -269,7 +269,7 @@ def build_index(
     splitter = _get_splitter(cfg)
     chunks: List[Document] = splitter.run(documents=cleaned)["documents"]
 
-    # Step 3: Filtra chunk corti e logga warning per paragrafi lunghi
+    # Step 3: Filter short chunks and log warnings for long paragraphs
     strategy = cfg.indexing.chunking.strategy
     min_len = cfg.indexing.min_chunk_length
     max_para_len = cfg.indexing.chunking.max_paragraph_length

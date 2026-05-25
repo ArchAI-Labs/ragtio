@@ -9,6 +9,7 @@ from typing import List
 import httpx
 
 from app.config import AppConfig, DecompositionConfig, ExpansionConfig, LLMConfig
+from app.utils import detect_language
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,7 @@ def _call_ollama(prompt: str, llm_cfg: LLMConfig) -> str:
         "model": llm_cfg.model,
         "prompt": prompt,
         "stream": False,
+        "think": llm_cfg.think,
         "options": {
             "temperature": llm_cfg.temperature,
             "top_p": llm_cfg.top_p,
@@ -78,13 +80,15 @@ def _call_openai(prompt: str, llm_cfg: LLMConfig) -> str:
         base_url=llm_cfg.openai_base_url,
         timeout=llm_cfg.timeout,
     )
-    response = client.chat.completions.create(
+    kwargs: dict = dict(
         model=llm_cfg.model,
         messages=[{"role": "user", "content": prompt}],
         temperature=llm_cfg.temperature,
         top_p=llm_cfg.top_p,
-        max_tokens=llm_cfg.max_tokens,
     )
+    if llm_cfg.max_tokens != -1:
+        kwargs["max_tokens"] = llm_cfg.max_tokens
+    response = client.chat.completions.create(**kwargs)
     return response.choices[0].message.content
 
 
@@ -100,15 +104,17 @@ def _deduplicate_against_original(variants: List[str], original_query: str) -> L
     return [v for v in variants if v.lower() != original_lower]
 
 
-def _expand_query(query: str, exp_cfg: ExpansionConfig, llm_cfg: LLMConfig) -> List[str]:
-    prompt = exp_cfg.prompt_template.format(query=query, n=exp_cfg.n_variants)
+def _expand_query(query: str, exp_cfg: ExpansionConfig, llm_cfg: LLMConfig, lang: str) -> List[str]:
+    base = exp_cfg.prompt_template.format(query=query, n=exp_cfg.n_variants)
+    prompt = f"[Respond in {lang} only]\n\n{base}"
     raw = _call_llm(prompt, llm_cfg)
     variants = _parse_llm_list_response(raw, exp_cfg.n_variants)
     return _deduplicate_against_original(variants, query)
 
 
-def _decompose_query(query: str, dec_cfg: DecompositionConfig, llm_cfg: LLMConfig) -> List[str]:
-    prompt = dec_cfg.prompt_template.format(query=query, n=dec_cfg.n_subqueries)
+def _decompose_query(query: str, dec_cfg: DecompositionConfig, llm_cfg: LLMConfig, lang: str) -> List[str]:
+    base = dec_cfg.prompt_template.format(query=query, n=dec_cfg.n_subqueries)
+    prompt = f"[Respond in {lang} only]\n\n{base}"
     raw = _call_llm(prompt, llm_cfg)
     sub_queries = _parse_llm_list_response(raw, dec_cfg.n_subqueries)
     return _deduplicate_against_original(sub_queries, query)
@@ -141,14 +147,16 @@ def enhance_query(query: str, cfg: AppConfig) -> EnhancedQuery:
         logger.info("enhance_query completato: nessuna tecnica abilitata, restituita query originale")
         return result
 
+    lang = detect_language(query)
+
     try:
         # Decomposition prima (genera sotto-query dalla query originale)
         if decomposition_enabled:
-            result.sub_queries = _decompose_query(query, qe_cfg.decomposition, cfg.llm)
+            result.sub_queries = _decompose_query(query, qe_cfg.decomposition, cfg.llm, lang)
 
         # Expansion sulla query originale
         if expansion_enabled:
-            result.expanded_queries = _expand_query(query, qe_cfg.expansion, cfg.llm)
+            result.expanded_queries = _expand_query(query, qe_cfg.expansion, cfg.llm, lang)
 
     except httpx.TimeoutException:
         logger.warning(

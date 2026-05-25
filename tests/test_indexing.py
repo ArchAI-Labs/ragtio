@@ -20,7 +20,7 @@ from app.indexing import (
 
 
 # ---------------------------------------------------------------------------
-# Mock components per test senza dipendenze esterne
+# Mock components for tests without external dependencies
 # ---------------------------------------------------------------------------
 
 FAKE_DIM = 4
@@ -222,7 +222,7 @@ class TestMinChunkLength:
 
 
 # ---------------------------------------------------------------------------
-# Test build_index — WARNING per paragrafi lunghi
+# Test build_index — WARNING for long paragraphs
 # ---------------------------------------------------------------------------
 
 
@@ -376,8 +376,8 @@ class TestGetEmbeddingDim:
         assert _get_embedding_dim(cfg) == 768
 
     def test_unknown_model_fallback(self):
-        # modello sconosciuto: fastembed viene chiamato lazily dentro la funzione,
-        # simuliamo il fallback patchando il modulo fastembed prima che venga importato
+        # unknown model: fastembed is called lazily inside the function,
+        # simulate the fallback by patching the fastembed module before it is imported
         cfg = EmbedderConfig(model="unknown/model-xyz")
         mock_te = MagicMock(side_effect=Exception("model not found"))
         with patch.dict("sys.modules", {"fastembed": MagicMock(TextEmbedding=mock_te)}):
@@ -394,7 +394,7 @@ class TestGetEmbeddingDim:
 class TestRegisterCustomEmbedder:
     def test_no_op_when_custom_is_none(self):
         cfg = EmbedderConfig(model="BAAI/bge-m3")
-        # non deve sollevare eccezioni né chiamare fastembed
+        # must not raise exceptions or call fastembed
         _register_custom_embedder(cfg)  # smoke test
 
     def test_calls_add_custom_model_with_hf(self):
@@ -413,7 +413,7 @@ class TestRegisterCustomEmbedder:
                 PoolingType=mock_pooling,
             ),
         }):
-            # re-import per usare i mock
+            # re-import to use the mocks
             import importlib
             import app.indexing as idx_mod
             importlib.reload(idx_mod)

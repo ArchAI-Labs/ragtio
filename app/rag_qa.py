@@ -11,10 +11,25 @@ from pydantic import BaseModel
 from app.config import AppConfig
 from app.query_enhancement import enhance_query
 from app.retrieval import retrieve
+from app.utils import detect_language
 
 logger = logging.getLogger(__name__)
 
 _NO_DOCS_ANSWER = "Non ho trovato documenti rilevanti per rispondere alla domanda."
+
+# ── Language detection (kept for backward compat, delegates to utils) ──────────
+
+_LANG_MARKERS: dict[str, frozenset[str]] = {
+    "Italian":    frozenset({"il","la","lo","gli","le","un","una","di","del","della","dei","degli","delle","che","è","non","con","per","si","come","dove","quando","questo","questa","questi","queste","quale","quali","sono","hai","siamo","avete","hanno","essere","fare","dire","vedere","sapere","volere","potere","andare","venire","cosa","perché","però","quindi","anche","già","ancora","sempre","mai","tutto","tutti","tutta","tutte"}),
+    "French":     frozenset({"le","la","les","un","une","des","je","tu","il","elle","nous","vous","ils","elles","est","sont","que","pas","pour","avec","comme","où","quand","cette","quel","quelle","aussi","très","bien","mais","ou","donc","car","ni","or","tout","tous","toute","toutes","être","avoir","faire","dire","voir","savoir","vouloir","pouvoir","aller","venir","dans","sur","sous","entre","après","avant"}),
+    "German":     frozenset({"der","die","das","des","dem","den","ein","eine","ist","sind","war","waren","nicht","mit","für","von","bei","nach","aus","an","auf","über","unter","zwischen","ich","du","er","sie","wir","ihr","auch","noch","schon","immer","alles","alle","sein","haben","werden","können","müssen","sollen","wollen","machen","sagen","gehen","kommen","wissen","sehen"}),
+    "Spanish":    frozenset({"el","la","los","las","un","una","es","son","fue","fueron","que","no","con","para","por","como","donde","cuando","este","esta","estos","estas","cual","cuales","también","muy","bien","pero","sino","aunque","porque","todo","todos","toda","todas","ser","tener","hacer","decir","ver","saber","querer","poder","ir","venir","yo","tú","él","ella","nosotros","vosotros","ellos"}),
+    "Portuguese": frozenset({"o","a","os","as","um","uma","é","são","foi","foram","que","não","com","para","por","como","onde","quando","este","esta","estes","estas","qual","quais","também","muito","bem","mas","porque","todo","todos","toda","todas","ser","ter","fazer","dizer","ver","saber","querer","poder","ir","vir","eu","tu","ele","ela","nós","vós","eles"}),
+}
+
+
+def _detect_language(text: str) -> str:
+    return detect_language(text)
 
 
 class SourceDocument(BaseModel):
@@ -111,9 +126,11 @@ def _collect_docs(query: str, enhanced_queries: List[str], cfg: AppConfig, filte
 # ── LLM call helpers ───────────────────────────────────────────────────────────
 
 def _build_messages(context: str, question: str, cfg: AppConfig) -> list:
+    lang = _detect_language(question)
+    system = cfg.llm.system_prompt + f"\n\nIMPORTANT: The user is writing in {lang}. You MUST reply in {lang} only. Never switch language."
     prompt = cfg.llm.rag_prompt_template.format(context=context, question=question)
     return [
-        {"role": "system", "content": cfg.llm.system_prompt},
+        {"role": "system", "content": system},
         {"role": "user", "content": prompt},
     ]
 
@@ -129,6 +146,7 @@ async def _call_ollama(context: str, question: str, cfg: AppConfig) -> str:
             "num_predict": cfg.llm.max_tokens,
         },
         "stream": False,
+        "think": cfg.llm.think,
     }
     async with httpx.AsyncClient(timeout=cfg.llm.timeout) as client:
         response = await client.post(f"{cfg.llm.host}/api/chat", json=payload)
@@ -145,13 +163,11 @@ async def _call_openai(context: str, question: str, cfg: AppConfig) -> str:
         base_url=cfg.llm.openai_base_url,
         timeout=cfg.llm.timeout,
     )
-    response = await client.chat.completions.create(
-        model=cfg.llm.model,
-        messages=messages,
-        temperature=cfg.llm.temperature,
-        top_p=cfg.llm.top_p,
-        max_tokens=cfg.llm.max_tokens,
-    )
+    kwargs: dict = dict(model=cfg.llm.model, messages=messages,
+                        temperature=cfg.llm.temperature, top_p=cfg.llm.top_p)
+    if cfg.llm.max_tokens != -1:
+        kwargs["max_tokens"] = cfg.llm.max_tokens
+    response = await client.chat.completions.create(**kwargs)
     return response.choices[0].message.content
 
 
@@ -166,6 +182,7 @@ async def _stream_ollama(context: str, question: str, cfg: AppConfig) -> AsyncGe
             "num_predict": cfg.llm.max_tokens,
         },
         "stream": True,
+        "think": cfg.llm.think,
     }
     async with httpx.AsyncClient(timeout=cfg.llm.timeout) as client:
         async with client.stream("POST", f"{cfg.llm.host}/api/chat", json=payload) as resp:
@@ -188,14 +205,11 @@ async def _stream_openai(context: str, question: str, cfg: AppConfig) -> AsyncGe
         base_url=cfg.llm.openai_base_url,
         timeout=cfg.llm.timeout,
     )
-    stream = await client.chat.completions.create(
-        model=cfg.llm.model,
-        messages=messages,
-        temperature=cfg.llm.temperature,
-        top_p=cfg.llm.top_p,
-        max_tokens=cfg.llm.max_tokens,
-        stream=True,
-    )
+    kwargs: dict = dict(model=cfg.llm.model, messages=messages,
+                        temperature=cfg.llm.temperature, top_p=cfg.llm.top_p, stream=True)
+    if cfg.llm.max_tokens != -1:
+        kwargs["max_tokens"] = cfg.llm.max_tokens
+    stream = await client.chat.completions.create(**kwargs)
     async for chunk in stream:
         token = chunk.choices[0].delta.content
         if token:

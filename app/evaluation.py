@@ -1,4 +1,4 @@
-"""Pipeline di evaluation del sistema RAG."""
+"""RAG system evaluation pipeline."""
 import json
 import logging
 import random
@@ -38,13 +38,13 @@ class EvaluationReport:
     mode: Literal["A", "B"]
     n_samples: int
     ir_metrics: IRMetrics
-    gen_metrics: Optional[GenMetrics]  # None per Mode A
+    gen_metrics: Optional[GenMetrics]  # None for Mode A
     k_values: List[int]
     retrieval_mode: str
     reranker_used: bool
     elapsed_time_seconds: float
     per_sample_results: List[dict]
-    # Solo per Mode B:
+    # Only for Mode B:
     k_folds: Optional[int] = None
     ir_metrics_std: Optional[IRMetrics] = None
 
@@ -53,7 +53,7 @@ class EvaluationReport:
 
 
 def _sample_chunks(cfg: AppConfig, n: int) -> list:
-    """Campiona n chunk casuali dalla collection Qdrant."""
+    """Samples n random chunks from the Qdrant collection."""
     from qdrant_client import QdrantClient
 
     client = QdrantClient(
@@ -74,7 +74,7 @@ def _sample_chunks(cfg: AppConfig, n: int) -> list:
         )
         return results.points
     except (ImportError, AttributeError):
-        # Fallback per versioni precedenti di qdrant-client che non supportano SampleQuery
+        # Fallback for older qdrant-client versions that do not support SampleQuery
         records, _ = client.scroll(
             collection_name=cfg.qdrant.collection_name,
             limit=max(n * 5, 200),
@@ -86,7 +86,7 @@ def _sample_chunks(cfg: AppConfig, n: int) -> list:
 
 
 def _extract_chunk_id(record) -> Optional[str]:
-    """Estrae il Haystack document ID dal payload del record Qdrant."""
+    """Extracts the Haystack document ID from the Qdrant record payload."""
     payload = getattr(record, "payload", {}) or {}
     doc_id = payload.get("id") or payload.get("_id")
     if doc_id:
@@ -95,7 +95,7 @@ def _extract_chunk_id(record) -> Optional[str]:
 
 
 def _extract_chunk_text(record) -> Optional[str]:
-    """Estrae il testo dal payload del record Qdrant."""
+    """Extracts the text from the Qdrant record payload."""
     payload = getattr(record, "payload", {}) or {}
     return payload.get("content") or payload.get("text")
 
@@ -106,7 +106,7 @@ QueryKind = Literal["question", "keywords"]
 
 
 def _resolve_query_kind(cfg: AppConfig) -> QueryKind:
-    """Determina il tipo di query da generare in base alla configurazione."""
+    """Determines the query type to generate based on the configuration."""
     query_type = cfg.evaluation.mode_a.query_type
     if query_type == "auto":
         return "keywords" if cfg.retrieval.mode == "sparse" else "question"
@@ -114,7 +114,7 @@ def _resolve_query_kind(cfg: AppConfig) -> QueryKind:
 
 
 def _generate_query(chunk_text: str, kind: QueryKind, cfg: AppConfig) -> Optional[str]:
-    """Genera una domanda sintetica o una lista di keyword per un chunk tramite il LLM."""
+    """Generates a synthetic question or keyword list for a chunk using the LLM."""
     if kind == "keywords":
         prompt = cfg.evaluation.mode_a.keyword_gen_prompt.format(chunk=chunk_text)
     else:
@@ -168,7 +168,7 @@ def _generate_query(chunk_text: str, kind: QueryKind, cfg: AppConfig) -> Optiona
 
 
 def _save_report(report: EvaluationReport, output_dir: str) -> Path:
-    """Salva il report di evaluation come JSON."""
+    """Saves the evaluation report as JSON."""
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
@@ -187,14 +187,14 @@ def _save_report(report: EvaluationReport, output_dir: str) -> Path:
 
 def run_evaluation_mode_a(cfg: AppConfig) -> EvaluationReport:
     """
-    Esegue la valutazione Mode A: genera domande sintetiche dai chunk
-    e misura la qualità del retrieval.
+    Runs Mode A evaluation: generates synthetic questions from chunks
+    and measures retrieval quality.
 
     Args:
-        cfg: Configurazione applicativa.
+        cfg: Application configuration.
 
     Returns:
-        EvaluationReport con metriche IR aggregate.
+        EvaluationReport with aggregated IR metrics.
     """
     mode_cfg = cfg.evaluation.mode_a
     k_values = mode_cfg.k_values
@@ -237,7 +237,7 @@ def run_evaluation_mode_a(cfg: AppConfig) -> EvaluationReport:
         ]
         relevant_ids = [chunk_id]
 
-        # 4. Calcolo metriche per campione
+        # 4. Compute per-sample metrics
         sample_result: dict = {
             "chunk_id": chunk_id,
             "chunk_text": chunk_text,
